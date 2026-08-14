@@ -648,13 +648,7 @@ var S = {
   attSearch:'',
   queueHistory:[],     // circular buffer: [{ts, code, queues:{id:wait}}] max 6 entradas
   rainWindow:null,     // {detectedAt, estimatedEndAt} ou null
-  routeState: {        // estado do roteiro em tempo real
-    userLat: null, userLng: null,   // posicao GPS atual
-    lastAttId: null,                 // id da ultima atracao visitada
-    dismissed: new Set(),            // ids dispensados da lista
-    gpsActive: false,
-    gpsError: null,
-  },
+  routeStates: {},     // estado do roteiro por parkId: { [apiId]: { userLat, userLng, lastAttId, dismissed, gpsActive, gpsError } }
 };
 
 /* --- STORAGE --- */
@@ -781,67 +775,67 @@ async function fetchPark(apiId){
 /* --- STATIC DATA: area, desc, url --- */
 var STATIC = {
   /* ---- MAGIC KINGDOM ---- */
-  'space-mountain':         {area:'Tomorrowland',      covered:true,  desc:'Montanha-russa espacial no escuro com sons e luzes cosmicas.'},
-  'buzz-lightyear':         {area:'Tomorrowland',      covered:true,  desc:'Gire sua nave e derrube alvos com raios laser.'},
-  'big-thunder-mountain':   {area:'Frontierland',      covered:false, desc:'Montanha-russa em mina de ouro do Velho Oeste.'},
-  'haunted-mansion':        {area:'Liberty Square',    covered:true,  desc:'Visite a mansao mal-assombrada com 999 fantasmas.'},
-  'jungle-cruise':          {area:'Adventureland',     covered:false, desc:'Navegue pela selva com hipopotamos e crocodilos animatronicos.'},
-  'tron':                   {area:'Tomorrowland',      covered:true,  desc:'Montanha-russa que simula corrida de motos no universo de Tron.'},
-  'seven-dwarfs':           {area:'Fantasyland',       covered:true,  desc:'Montanha-russa familiar com os Sete Anoes em vagoes que balancam.'},
-  'tiana':                  {area:'Frontierland',      covered:false, desc:'Passeio aquatico pela Bayou com a Princesa Tiana e criaturas encantadas.'},
-  'peter-pan':              {area:'Fantasyland',       covered:true,  desc:'Embarque em uma aventura nas alturas que destaca cenas iconicas de filmes de animacao da Disney.'},
-  'small-world':            {area:'Fantasyland',       covered:true,  desc:'Embarque em um passeio fantastico, passando por um alegre coral de criancas de todo o mundo.'},
-  'pirates':                {area:'Adventureland',     covered:true,  desc:'Aventure-se navegando para um tempo e lugar ha muito esquecidos quando piratas e corsarios dominavam os mares.'},
-  'winnie-pooh':            {area:'Fantasyland',       covered:true,  desc:'Viaje pelo Cem Paus de Madeiro em um Pote de Mel gigante e se perca nas paginas dos classicos contos de A.A. Milne.'},
-  'dumbo':                  {area:'Storybook Circus',  covered:false, desc:'Decole rumo ao ceu e veja um elefante voar em um voo fantastico a bordo do Dumbo.'},
-  'little-mermaid':         {area:'Storybook Circus',  covered:true,  desc:'Embarque em uma concha e entre no mundo de Ariel em uma aventura musical repleta de cenas do classico de animacao.'},
-  'carrousel':              {area:'Fantasyland',       covered:false, desc:'Monte em um cavalo real e galope por um cenario giratório com cores maravilhosas e musicas fantasticas.'},
-  'mad-tea-party':          {area:'Fantasyland',       covered:false, desc:'Rodopie em uma xicara de cha gigante durante um redemoinho maluco com muita musica.'},
-  'tomorrowland-speedway':  {area:'Tomorrowland',      covered:false, desc:'Pise com vontade no acelerador do seu carro turbinado e dispare em uma bela rodovia em miniatura.'},
-  'astro-orbiter':          {area:'Tomorrowland',      covered:false, desc:'Pilote uma nave espacial la no alto, em meio a uma constelacao de planetas brilhantes.'},
-  'tiki-room':              {area:'Adventureland',     covered:true,  desc:'Passaros tropicais, deuses Tiki e flores coloridas ganham vida em uma grandiosa celebracao musical dos Mares do Sul.'},
-  'country-bear':           {area:'Frontierland',      covered:true,  desc:'Show reimaginado onde Henry, Trixie, Big Al e amigos tocam cancoes Disney embaladas pelo charme da regiao sul dos EUA.'},
-  'hall-of-presidents':     {area:'Liberty Square',    covered:true,  desc:'Contemple todos os Presidentes dos EUA em um show emocionante que traca a historia do mais alto cargo eleito do pais.'},
-  'philharmagic':           {area:'Fantasyland',       covered:true,  desc:'A magia e a musica da Disney se unem nesta espetacular aventura de fantasia em 3D de 12 minutos estrelada pelo Pato Donald.'},
-  'monsters-laugh':         {area:'Tomorrowland',      covered:true,  desc:'Participe de um show de humor hilariante repleto de piadas, estrelando a Monsters, Inc. e toda a turma!'},
-  'wdw-railroad':           {area:'Main Street U.S.A.', desc:'Celebre um classico da cultura dos EUA nesta estacao de trem magnifica perto da entrada do Magic Kingdom Park.'},
-  'cinderella-castle':      {area:'Fantasyland', desc:'Inspirada no castelo do filme Cinderela, esta encantadora edificacao e o grande simbolo do Magic Kingdom Park.'},
-  'meet-mickey':            {area:'Main Street U.S.A.', desc:'Va ate os bastidores como convidado especial de seu Amigo, o Mickey Mouse.'},
-  'meet-princesses':        {area:'Fantasyland', desc:'A Cinderela esta esperando voce no lugar onde, para realizar um sonho, basta desejar com seu coracao.'},
-  'philharmonic':           {area:'Main Street U.S.A.', desc:'Banda ao vivo tocando classicos Disney no Main Street.'},
-  'happily-ever-after':     {area:'Main Street U.S.A.', desc:'Espetaculo de fogos com projecoes no Castelo da Cinderela.'},
-  'festival-fantasy':       {area:'Main Street U.S.A.', desc:'Parada com personagens Disney, carros alegoricos e musica.'},
-  'move-shake':             {area:'Main Street U.S.A.', desc:'Celebracao musical interativa com Mickey e amigos nas ruas.'},
-  'friendship-faire':       {area:'Fantasyland', desc:'Show ao vivo com Mickey, Minnie e amigos no palco do castelo.'},
-  'cavalcade':              {area:'Main Street U.S.A.', desc:'Desfile de personagens ao longo do Main Street com temas variados.'},
-  'boo-to-you':             {area:'Main Street U.S.A.', desc:"Desfile do Mickey's Boo-to-You Halloween Parade no Mickey's Not-So-Scary Halloween Party."},
-  'hocus-pocus':            {area:'Main Street U.S.A.', desc:'Viva emocoes assombradas ao encontrar os Viloes Disney mais malvados nesta celebracao divertidamente horripilante.'},
-  'not-spooky-spectacular': {area:'Main Street U.S.A.', desc:"Olhe para o ceu e presencie um espetaculo hipnotizante de fogos e projecoes no Mickey's Not-So-Scary Halloween Party."},
-  'disney-enchantment':     {area:'Main Street U.S.A.', desc:'Espetaculo de fogos de artificio com luzes, lasers e projecoes fantasticas ao longo do Main Street, U.S.A.'},
-  'dessert-party':          {area:'Tomorrowland', desc:'Sente-se e saboreie sobremesas irresistiveis enquanto assiste ao Happily Ever After, o grandioso show de fogos de artificio.'},
-  'royal-friendship-faire': {area:'Main Street U.S.A.', desc:'Assista ao Mickey e seus Amigos subirem ao palco em frente ao Cinderella Castle nesta magica celebracao.'},
-  'disney-starlight':       {area:'Main Street U.S.A.', desc:'Deslumbrante desfile noturno que atravessa o Magic Kingdom celebrando momentos magicos das estorias Disney com o realce da luz das estrelas.'},
+  'space-mountain':         {area:'Tomorrowland',      covered:true,  duration:3,  lat:28.41894, lng:-81.57742, desc:'Montanha-russa espacial no escuro com sons e luzes cosmicas.'},
+  'buzz-lightyear':         {area:'Tomorrowland',      covered:true,  duration:5,  lat:28.41840, lng:-81.57810, desc:'Gire sua nave e derrube alvos com raios laser.'},
+  'big-thunder-mountain':   {area:'Frontierland',      covered:false, duration:4,  lat:28.41952, lng:-81.58338, desc:'Montanha-russa em mina de ouro do Velho Oeste.'},
+  'haunted-mansion':        {area:'Liberty Square',    covered:true,  duration:9,  lat:28.41988, lng:-81.58136, desc:'Visite a mansao mal-assombrada com 999 fantasmas.'},
+  'jungle-cruise':          {area:'Adventureland',     covered:false, duration:10, lat:28.41859, lng:-81.58368, desc:'Navegue pela selva com hipopotamos e crocodilos animatronicos.'},
+  'tron':                   {area:'Tomorrowland',      covered:true,  duration:2,  lat:28.41956, lng:-81.57712, desc:'Montanha-russa que simula corrida de motos no universo de Tron.'},
+  'seven-dwarfs':           {area:'Fantasyland',       covered:true,  duration:3,  lat:28.42049, lng:-81.58085, desc:'Montanha-russa familiar com os Sete Anoes em vagoes que balancam.'},
+  'tiana':                  {area:'Frontierland',      covered:false, duration:12, lat:28.41970, lng:-81.58390, desc:'Passeio aquatico pela Bayou com a Princesa Tiana e criaturas encantadas.'},
+  'peter-pan':              {area:'Fantasyland',       covered:true,  duration:3,  lat:28.42072, lng:-81.58172, desc:'Embarque em uma aventura nas alturas que destaca cenas iconicas de filmes de animacao da Disney.'},
+  'small-world':            {area:'Fantasyland',       covered:true,  duration:11, lat:28.42159, lng:-81.58174, desc:'Embarque em um passeio fantastico, passando por um alegre coral de criancas de todo o mundo.'},
+  'pirates':                {area:'Adventureland',     covered:true,  duration:9,  lat:28.41840, lng:-81.58300, desc:'Aventure-se navegando para um tempo e lugar ha muito esquecidos quando piratas e corsarios dominavam os mares.'},
+  'winnie-pooh':            {area:'Fantasyland',       covered:true,  duration:5,  lat:28.42083, lng:-81.58040, desc:'Viaje pelo Cem Paus de Madeiro em um Pote de Mel gigante e se perca nas paginas dos classicos contos de A.A. Milne.'},
+  'dumbo':                  {area:'Storybook Circus',  covered:false, duration:2,  lat:28.42165, lng:-81.57900, desc:'Decole rumo ao ceu e veja um elefante voar em um voo fantastico a bordo do Dumbo.'},
+  'little-mermaid':         {area:'Storybook Circus',  covered:true,  duration:7,  lat:28.42130, lng:-81.57840, desc:'Embarque em uma concha e entre no mundo de Ariel em uma aventura musical repleta de cenas do classico de animacao.'},
+  'carrousel':              {area:'Fantasyland',       covered:false, duration:3,  lat:28.42010, lng:-81.58117, desc:'Monte em um cavalo real e galope por um cenario giratório com cores maravilhosas e musicas fantasticas.'},
+  'mad-tea-party':          {area:'Fantasyland',       covered:false, duration:2,  lat:28.42112, lng:-81.58040, desc:'Rodopie em uma xicara de cha gigante durante um redemoinho maluco com muita musica.'},
+  'tomorrowland-speedway':  {area:'Tomorrowland',      covered:false, duration:5,  lat:28.41830, lng:-81.57690, desc:'Pise com vontade no acelerador do seu carro turbinado e dispare em uma bela rodovia em miniatura.'},
+  'astro-orbiter':          {area:'Tomorrowland',      covered:false, duration:3,  lat:28.41884, lng:-81.57773, desc:'Pilote uma nave espacial la no alto, em meio a uma constelacao de planetas brilhantes.'},
+  'tiki-room':              {area:'Adventureland',     covered:true,  duration:16, lat:28.41808, lng:-81.58328, desc:'Passaros tropicais, deuses Tiki e flores coloridas ganham vida em uma grandiosa celebracao musical dos Mares do Sul.'},
+  'country-bear':           {area:'Frontierland',      covered:true,  duration:17, lat:28.41934, lng:-81.58312, desc:'Show reimaginado onde Henry, Trixie, Big Al e amigos tocam cancoes Disney embaladas pelo charme da regiao sul dos EUA.'},
+  'hall-of-presidents':     {area:'Liberty Square',    covered:true,  duration:23, lat:28.42001, lng:-81.58203, desc:'Contemple todos os Presidentes dos EUA em um show emocionante que traca a historia do mais alto cargo eleito do pais.'},
+  'philharmagic':           {area:'Fantasyland',       covered:true,  duration:12, lat:28.42000, lng:-81.58097, desc:'A magia e a musica da Disney se unem nesta espetacular aventura de fantasia em 3D de 12 minutos estrelada pelo Pato Donald.'},
+  'monsters-laugh':         {area:'Tomorrowland',      covered:true,  duration:20, lat:28.41868, lng:-81.57783, desc:'Participe de um show de humor hilariante repleto de piadas, estrelando a Monsters, Inc. e toda a turma!'},
+  'wdw-railroad':           {area:'Main Street U.S.A.', covered:true, duration:20, lat:28.41768, lng:-81.57997, desc:'Celebre um classico da cultura dos EUA nesta estacao de trem magnifica perto da entrada do Magic Kingdom Park.'},
+  'cinderella-castle':      {area:'Fantasyland',       covered:false, duration:5,  lat:28.41999, lng:-81.58064, desc:'Inspirada no castelo do filme Cinderela, esta encantadora edificacao e o grande simbolo do Magic Kingdom Park.'},
+  'meet-mickey':            {area:'Main Street U.S.A.', covered:true, duration:15, lat:28.41799, lng:-81.58064, desc:'Va ate os bastidores como convidado especial de seu Amigo, o Mickey Mouse.'},
+  'meet-princesses':        {area:'Fantasyland',       covered:true,  duration:15, lat:28.42010, lng:-81.58064, desc:'A Cinderela esta esperando voce no lugar onde, para realizar um sonho, basta desejar com seu coracao.'},
+  'philharmonic':           {area:'Main Street U.S.A.', covered:false,duration:15, lat:28.41830, lng:-81.58064, desc:'Banda ao vivo tocando classicos Disney no Main Street.'},
+  'happily-ever-after':     {area:'Main Street U.S.A.', covered:false,duration:18, lat:28.41830, lng:-81.58064, desc:'Espetaculo de fogos com projecoes no Castelo da Cinderela.'},
+  'festival-fantasy':       {area:'Main Street U.S.A.', covered:false,duration:12, lat:28.41790, lng:-81.58064, desc:'Parada com personagens Disney, carros alegoricos e musica.'},
+  'move-shake':             {area:'Main Street U.S.A.', covered:false,duration:10, lat:28.41790, lng:-81.58064, desc:'Celebracao musical interativa com Mickey e amigos nas ruas.'},
+  'friendship-faire':       {area:'Fantasyland',       covered:false, duration:15, lat:28.41999, lng:-81.58064, desc:'Show ao vivo com Mickey, Minnie e amigos no palco do castelo.'},
+  'cavalcade':              {area:'Main Street U.S.A.', covered:false,duration:8,  lat:28.41790, lng:-81.58064, desc:'Desfile de personagens ao longo do Main Street com temas variados.'},
+  'boo-to-you':             {area:'Main Street U.S.A.', covered:false,duration:12, lat:28.41790, lng:-81.58064, desc:"Desfile do Mickey's Boo-to-You Halloween Parade no Mickey's Not-So-Scary Halloween Party."},
+  'hocus-pocus':            {area:'Main Street U.S.A.', covered:false,duration:20, lat:28.41790, lng:-81.58064, desc:'Viva emocoes assombradas ao encontrar os Viloes Disney mais malvados nesta celebracao divertidamente horripilante.'},
+  'not-spooky-spectacular': {area:'Main Street U.S.A.', covered:false,duration:18, lat:28.41790, lng:-81.58064, desc:"Olhe para o ceu e presencie um espetaculo hipnotizante de fogos e projecoes no Mickey's Not-So-Scary Halloween Party."},
+  'disney-enchantment':     {area:'Main Street U.S.A.', covered:false,duration:18, lat:28.41790, lng:-81.58064, desc:'Espetaculo de fogos de artificio com luzes, lasers e projecoes fantasticas ao longo do Main Street, U.S.A.'},
+  'dessert-party':          {area:'Tomorrowland',      covered:false, duration:60, lat:28.41830, lng:-81.57750, desc:'Sente-se e saboreie sobremesas irresistiveis enquanto assiste ao Happily Ever After, o grandioso show de fogos de artificio.'},
+  'royal-friendship-faire': {area:'Main Street U.S.A.', covered:false,duration:15, lat:28.41999, lng:-81.58064, desc:'Assista ao Mickey e seus Amigos subirem ao palco em frente ao Cinderella Castle nesta magica celebracao.'},
+  'disney-starlight':       {area:'Main Street U.S.A.', covered:false,duration:20, lat:28.41790, lng:-81.58064, desc:'Deslumbrante desfile noturno que atravessa o Magic Kingdom celebrando momentos magicos das estorias Disney com o realce da luz das estrelas.'},
   /* ---- HOLLYWOOD STUDIOS ---- */
-  'mickey-runaway':         {area:'Hollywood Boulevard', desc:'Passeio em tela envolvente pelos filmes de Mickey com efeitos fisicos.'},
-  'slinky-dog':             {area:'Toy Story Land', desc:'Montanha-russa familiar pelos campos de Toy Story Land.'},
-  'toy-story-mania':        {area:'Toy Story Land', desc:'Atire em alvos e acumule pontos neste passeio interativo.'},
-  'tower-of-terror':        {area:'Sunset Boulevard', desc:'Suba ao Hotel Hollywood Tower e experimente quedas de elevador.'},
-  'rock-n-roller':          {area:'Sunset Boulevard', desc:'Montanha-russa no escuro com os Muppets a 97km/h em 2 segundos, com musica e efeitos especiais.'},
-  'rise-resistance':        {area:"Star Wars: Galaxy's Edge", desc:'Escape da Primeira Ordem nesta epica atracao imersiva de Star Wars.'},
-  'millennium-falcon':      {area:"Star Wars: Galaxy's Edge", desc:'Pilote o Millennium Falcon em missao de contrabando.'},
-  'star-tours':             {area:'Echo Lake', desc:'Simulador de viagem estelar pelo universo Star Wars.'},
-  'alien-swirling':         {area:'Toy Story Land', desc:'Passeio giratório com os aliens de Toy Story.'},
-  'indiana-jones':          {area:'Echo Lake', desc:'Show ao vivo com dublas, explosoes e cenas de acao de Indiana Jones.'},
-  'beauty-beast':           {area:'Theater of the Stars', desc:'Musical ao vivo com a Bela e a Fera em teatro ao ar livre.'},
-  'frozen-sing':            {area:'Echo Lake', desc:'Voce se derretera por essa calorosa celebracao de Frozen, com historias, cancoes e convidados especiais.'},
-  'disney-junior':          {area:'Animation Courtyard', desc:'Show interativo com musicas, dancas e aparicoes de personagens favoritos das criancas.'},
-  'galaxy-far-away':        {area:'Hollywood Boulevard', desc:'Show ao vivo com clipes de filmes, pirotecnia e personagens iconicos como Darth Vader, Chewbacca e Kylo Ren.'},
-  'droid-depot':            {area:"Star Wars: Galaxy's Edge", desc:'Monte seu proprio droid no deposito industrial do Black Spire Outpost.'},
-  'savis-workshop':         {area:"Star Wars: Galaxy's Edge", desc:'Monte seu proprio sabre de luz personalizado nesta oficina secreta e continue no caminho da Forca.'},
-  'little-mermaid-hs':      {area:'Animation Courtyard', desc:'Reviva a historia encantadora de Ariel nesta deslumbrante producao teatral inspirada no classico de animacao The Little Mermaid.'},
-  'fantasmic':              {area:'Sunset Boulevard', desc:'Presencie as forcas do bem e do mal se confrontarem no sonho do Mickey neste extravagante musical noturno ao ar livre.'},
-  'wonderful-animation':    {area:'Hollywood Boulevard', desc:'Faca parte da aventura entrando em uma colecao de filmes de animacao novos, classicos e raramente vistos em projecoes cinematograficas.'},
-  'movie-magic':            {area:'Hollywood Boulevard', desc:'Show de projecoes noturno de 10 a 12 minutos destacando Indiana Jones e os Piratas do Caribe na fachada do Teatro Chines.'},
+  'mickey-runaway':         {area:'Hollywood Boulevard', covered:true, duration:5,  lat:28.35802, lng:-81.56019, desc:'Passeio em tela envolvente pelos filmes de Mickey com efeitos fisicos.'},
+  'slinky-dog':             {area:'Toy Story Land',    covered:false, duration:2,  lat:28.35639, lng:-81.56097, desc:'Montanha-russa familiar pelos campos de Toy Story Land.'},
+  'toy-story-mania':        {area:'Toy Story Land',    covered:true,  duration:7,  lat:28.35580, lng:-81.56049, desc:'Atire em alvos e acumule pontos neste passeio interativo.'},
+  'tower-of-terror':        {area:'Sunset Boulevard',  covered:true,  duration:12, lat:28.35537, lng:-81.56255, desc:'Suba ao Hotel Hollywood Tower e experimente quedas de elevador.'},
+  'rock-n-roller':          {area:'Sunset Boulevard',  covered:true,  duration:2,  lat:28.35646, lng:-81.56289, desc:'Montanha-russa no escuro com os Muppets a 97km/h em 2 segundos, com musica e efeitos especiais.'},
+  'rise-resistance':        {area:"Star Wars: Galaxy's Edge", covered:true, duration:18, lat:28.35319, lng:-81.56358, desc:'Escape da Primeira Ordem nesta epica atracao imersiva de Star Wars.'},
+  'millennium-falcon':      {area:"Star Wars: Galaxy's Edge", covered:true, duration:5,  lat:28.35259, lng:-81.56283, desc:'Pilote o Millennium Falcon em missao de contrabando.'},
+  'star-tours':             {area:'Echo Lake',         covered:true,  duration:5,  lat:28.35821, lng:-81.56099, desc:'Simulador de viagem estelar pelo universo Star Wars.'},
+  'alien-swirling':         {area:'Toy Story Land',    covered:false, duration:2,  lat:28.35610, lng:-81.56120, desc:'Passeio giratório com os aliens de Toy Story.'},
+  'indiana-jones':          {area:'Echo Lake',         covered:false, duration:30, lat:28.35770, lng:-81.56058, desc:'Show ao vivo com dublas, explosoes e cenas de acao de Indiana Jones.'},
+  'beauty-beast':           {area:'Theater of the Stars', covered:false, duration:25, lat:28.35633, lng:-81.56228, desc:'Musical ao vivo com a Bela e a Fera em teatro ao ar livre.'},
+  'frozen-sing':            {area:'Echo Lake',         covered:true,  duration:30, lat:28.35866, lng:-81.56080, desc:'Voce se derretera por essa calorosa celebracao de Frozen, com historias, cancoes e convidados especiais.'},
+  'disney-junior':          {area:'Animation Courtyard', covered:true, duration:22, lat:28.35738, lng:-81.55998, desc:'Show interativo com musicas, dancas e aparicoes de personagens favoritos das criancas.'},
+  'galaxy-far-away':        {area:'Hollywood Boulevard', covered:false,duration:20, lat:28.35930, lng:-81.56040, desc:'Show ao vivo com clipes de filmes, pirotecnia e personagens iconicos como Darth Vader, Chewbacca e Kylo Ren.'},
+  'droid-depot':            {area:"Star Wars: Galaxy's Edge", covered:true, duration:30, lat:28.35310, lng:-81.56333, desc:'Monte seu proprio droid no deposito industrial do Black Spire Outpost.'},
+  'savis-workshop':         {area:"Star Wars: Galaxy's Edge", covered:true, duration:30, lat:28.35286, lng:-81.56310, desc:'Monte seu proprio sabre de luz personalizado nesta oficina secreta e continue no caminho da Forca.'},
+  'little-mermaid-hs':      {area:'Animation Courtyard', covered:true, duration:17, lat:28.35714, lng:-81.55968, desc:'Reviva a historia encantadora de Ariel nesta deslumbrante producao teatral inspirada no classico de animacao The Little Mermaid.'},
+  'fantasmic':              {area:'Sunset Boulevard',  covered:false, duration:30, lat:28.35498, lng:-81.56300, desc:'Presencie as forcas do bem e do mal se confrontarem no sonho do Mickey neste extravagante musical noturno ao ar livre.'},
+  'wonderful-animation':    {area:'Hollywood Boulevard', covered:true, duration:40, lat:28.35930, lng:-81.56040, desc:'Faca parte da aventura entrando em uma colecao de filmes de animacao novos, classicos e raramente vistos em projecoes cinematograficas.'},
+  'movie-magic':            {area:'Hollywood Boulevard', covered:false,duration:12, lat:28.35930, lng:-81.56040, desc:'Show de projecoes noturno de 10 a 12 minutos destacando Indiana Jones e os Piratas do Caribe na fachada do Teatro Chines.'},
   /* ---- EPCOT ---- */
   'guardians':              {area:'World Discovery',         covered:true,  duration:5,  lat:28.37488, lng:-81.54975, desc:'Montanha-russa dos Guardioes da Galaxia com musica e queda livre.'},
   'test-track':             {area:'World Discovery',         covered:true,  duration:5,  lat:28.37390, lng:-81.54887, desc:'Projete e teste um carro virtual em condicoes extremas.'},
@@ -2272,8 +2266,8 @@ function buildItinerary() {
     return { area:a, score:score };
   }).sort(function(a,b){ return a.score - b.score; });
 
-  // Separa areas de "posicao para evento" (Main Street, World Showcase - Lago, Hollywood Blvd)
-  var anchorAreas = ['Main Street U.S.A.', 'World Showcase', 'Hollywood Boulevard', 'Sunset Boulevard'];
+  // Separa areas de "posicao para evento" por parque
+  var anchorAreas = ['Main Street U.S.A.', 'World Showcase', 'Hollywood Boulevard', 'Sunset Boulevard', 'Fantasyland'];
 
   var steps = [];
   var used  = {};
@@ -2301,9 +2295,17 @@ function buildItinerary() {
 
   // Se ha evento-ancora proximo, adiciona como ultimo passo
   if(nextAnchor && nextAnchor.minsTo <= 120) {
-    var anchorTip = nextAnchor.icon + ' ' + nextAnchor.name + ' em ' + nextAnchor.minsTo + ' min'
-      + ' — posicione-se '
-      + (nextAnchor.type === 'parade' ? 'no Main Street com antecedencia de 20-30 min.' : 'na area de visualizacao com 15-20 min de antecedencia.');
+    var _pid = S.park ? S.park.apiId : '';
+  var _anchorPos = nextAnchor.type === 'parade'
+    ? (_pid === MK_ID ? 'no Main Street U.S.A. com 20-30 min de antecedencia.'
+       : _pid === HS_ID ? 'no Hollywood Boulevard com 20-30 min de antecedencia.'
+       : 'no ponto de visualizacao com 20-30 min de antecedencia.')
+    : (_pid === EPCOT_ID ? 'na beira do lago World Showcase com 15-20 min de antecedencia.'
+       : _pid === MK_ID  ? 'proximo ao Hub em frente ao Castelo com 15-20 min de antecedencia.'
+       : _pid === HS_ID  ? 'no Sunset Boulevard com 15-20 min de antecedencia.'
+       : 'na area de visualizacao com 15-20 min de antecedencia.');
+  var anchorTip = nextAnchor.icon + ' ' + nextAnchor.name + ' em ' + nextAnchor.minsTo + ' min'
+      + ' — posicione-se ' + _anchorPos;
     steps.push({ area:null, tip:anchorTip, isAnchor:true, anchorData:nextAnchor });
   }
 
@@ -2500,14 +2502,28 @@ function tickRainWindow() {
 }
 
 /* ============================================================
-   ROTEIRO EM TEMPO REAL — EPCOT
+   ROTEIRO EM TEMPO REAL — TODOS OS PARQUES
    Haversine + score de fila + forecast + proximidade
    ============================================================ */
 var EPCOT_ID = '47f90d2c-e191-4239-a466-5892ef59a88b';
-// Ponto de entrada do EPCOT (Spaceship Earth)
-var EPCOT_ENTRANCE = { lat: 28.37476, lng: -81.54978 };
+var MK_ID    = '75ea578a-adc8-4116-a54d-dccb60765ef9';
+var HS_ID    = '288747d1-8b4f-4a64-867e-ea7c9b27bad8';
+
+// Pontos de entrada de cada parque
+var PARK_ENTRANCES = {
+  '47f90d2c-e191-4239-a466-5892ef59a88b': { lat: 28.37476, lng: -81.54978, name: 'EPCOT' },   // Spaceship Earth
+  '75ea578a-adc8-4116-a54d-dccb60765ef9': { lat: 28.41768, lng: -81.57997, name: 'Magic Kingdom' }, // Entrada / Train Station
+  '288747d1-8b4f-4a64-867e-ea7c9b27bad8': { lat: 28.35940, lng: -81.56017, name: 'Hollywood Studios' }, // Hollywood Blvd entrada
+};
+
+// Compat: mantém alias para o EPCOT_ENTRANCE usado em anchors inline
+var EPCOT_ENTRANCE = PARK_ENTRANCES[EPCOT_ID];
+
 // Velocidade media de caminhada no parque: 70 metros por minuto
 var WALK_SPEED = 70;
+
+// Bbox geral de Walt Disney World (cobre os 4 parques)
+var WDW_BBOX = { latMin: 28.33, latMax: 28.43, lngMin: -81.61, lngMax: -81.46 };
 
 function haversineMeters(lat1, lng1, lat2, lng2) {
   var R = 6371000;
@@ -2519,29 +2535,44 @@ function haversineMeters(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
+function getRouteState() {
+  var pid = S.park ? S.park.apiId : 'default';
+  if(!S.routeStates) S.routeStates = {};
+  if(!S.routeStates[pid]) {
+    S.routeStates[pid] = { userLat:null, userLng:null, lastAttId:null, dismissed:new Set(), gpsActive:false, gpsError:null };
+  }
+  return S.routeStates[pid];
+}
+
+function getParkEntrance() {
+  var pid = S.park ? S.park.apiId : EPCOT_ID;
+  return PARK_ENTRANCES[pid] || EPCOT_ENTRANCE;
+}
+
 function getOriginCoords() {
-  var rs = S.routeState;
+  var rs = getRouteState();
+  var entrance = getParkEntrance();
   // 1. GPS ativo
   if(rs.gpsActive && rs.userLat && rs.userLng) return { lat: rs.userLat, lng: rs.userLng, source: 'gps' };
-  // 2. Ultima atracao visitada
+  // 2. Ultima atracao visitada neste parque
   if(rs.lastAttId && S.coordCache[rs.lastAttId]) {
     var c = S.coordCache[rs.lastAttId];
     var e = S.att.find(function(x){ return x.id === rs.lastAttId; });
     return { lat: c.lat, lng: c.lng, source: 'last', name: e ? e.name : '' };
   }
-  // 3. Entrada do parque
-  return { lat: EPCOT_ENTRANCE.lat, lng: EPCOT_ENTRANCE.lng, source: 'entrance' };
+  // 3. Entrada do parque atual
+  return { lat: entrance.lat, lng: entrance.lng, source: 'entrance' };
 }
 
 function getAttCoords(e) {
-  // 1. Cache da API — valida que tem lat/lng numericos reais dentro de Orlando
+  // 1. Cache da API — valida que tem lat/lng numericos reais dentro do WDW
   var cached = S.coordCache[e.id];
   if(cached && typeof cached.lat === 'number' && typeof cached.lng === 'number'
-     && cached.lat > 28.3 && cached.lat < 28.45
-     && cached.lng > -81.65 && cached.lng < -81.45) {
+     && cached.lat > WDW_BBOX.latMin && cached.lat < WDW_BBOX.latMax
+     && cached.lng > WDW_BBOX.lngMin && cached.lng < WDW_BBOX.lngMax) {
     return cached;
   }
-  // 2. STATIC fallback
+  // 2. STATIC fallback (cobre MK, HS e EPCOT)
   var sd = getStatic(e);
   if(sd && sd.lat) return { lat: sd.lat, lng: sd.lng };
   return null;
@@ -2551,9 +2582,15 @@ function walkMinutes(fromLat, fromLng, toLat, toLng) {
   // Valida coordenadas antes de calcular
   if(!fromLat || !fromLng || !toLat || !toLng) return 5;
   if(isNaN(fromLat) || isNaN(fromLng) || isNaN(toLat) || isNaN(toLng)) return 5;
+  // Verifica que ambas as coordenadas estao dentro do WDW (cobre MK, EPCOT, HS, AK)
+  function inWDW(lat, lng) {
+    return lat > WDW_BBOX.latMin && lat < WDW_BBOX.latMax
+        && lng > WDW_BBOX.lngMin && lng < WDW_BBOX.lngMax;
+  }
+  if(!inWDW(fromLat, fromLng) || !inWDW(toLat, toLng)) return 5;
   var meters = haversineMeters(fromLat, fromLng, toLat, toLng);
-  // Dentro do EPCOT nenhuma caminhada passa de 20 min (~1400m)
-  if(!isFinite(meters) || meters > 2000) return 5;
+  // Dentro de qualquer parque nenhuma caminhada racional passa de ~30 min (~2100m)
+  if(!isFinite(meters) || meters > 2500) return 5;
   return Math.max(1, Math.round(meters / WALK_SPEED));
 }
 
@@ -2584,8 +2621,9 @@ function scoreAttraction(e, fromLat, fromLng) {
   // Bonus de proximidade: mesma area da ultima atracao visitada
   var sd = getStatic(e);
   var curArea = null;
-  if(S.routeState.lastAttId) {
-    var lastE = S.att.find(function(x){ return x.id === S.routeState.lastAttId; });
+  var _rs = getRouteState();
+  if(_rs.lastAttId) {
+    var lastE = S.att.find(function(x){ return x.id === _rs.lastAttId; });
     if(lastE) { var lastSd = getStatic(lastE); if(lastSd) curArea = lastSd.area; }
   }
   var areaBonus = (sd && curArea && sd.area === curArea) ? 15 : 0;
@@ -2595,9 +2633,9 @@ function scoreAttraction(e, fromLat, fromLng) {
 }
 
 function buildRoute() {
-  if(!S.park || S.park.apiId !== EPCOT_ID) return null;
+  if(!S.park) return null;
 
-  var rs = S.routeState;
+  var rs = getRouteState();
   var origin = getOriginCoords();
 
   // Candidatas: todas as atracoes do parque, nao visitadas, nao dispensadas
@@ -2636,7 +2674,8 @@ function buildRoute() {
       var minsUntilAnchor = minsTo(nextAnchor.startTime);
       // Se o show comeca em menos de 45 min e ainda nao inserimos
       if(minsUntilAnchor > 0 && minsUntilAnchor <= 45 && !route.find(function(r){ return r.isAnchor && r.name === nextAnchor.name; })) {
-        var anchorCoords = { lat: EPCOT_ENTRANCE.lat - 0.002, lng: EPCOT_ENTRANCE.lng - 0.002 }; // lago World Showcase
+        var _ent = getParkEntrance();
+        var anchorCoords = { lat: _ent.lat - 0.002, lng: _ent.lng - 0.002 }; // ponto de visualizacao do evento
         route.push({
           isAnchor: true, name: nextAnchor.name, icon: nextAnchor.icon,
           startTime: nextAnchor.startTime, minsTo: minsUntilAnchor,
@@ -2680,15 +2719,22 @@ function buildRoute() {
   return { route: route, origin: origin };
 }
 
+function parkSupportsRoute() {
+  // Parque suporta roteiro se tiver ao menos 3 atracoes com dados STATIC (lat/lng)
+  if(!S.att || !S.att.length) return false;
+  var count = S.att.filter(function(e){ var sd = getStatic(e); return sd && sd.lat; }).length;
+  return count >= 3;
+}
+
 function renderRoteiro() {
   var cont = document.getElementById('roteiro-content');
   if(!cont) return;
 
-  // So mostra para EPCOT
-  var isEpcot = S.park && S.park.apiId === EPCOT_ID;
+  // Mostra a aba Roteiro para qualquer parque com dados suficientes
+  var hasRoute = S.park && parkSupportsRoute();
   var tab = document.getElementById('tab-roteiro');
-  if(tab) tab.style.display = isEpcot ? '' : 'none';
-  if(!isEpcot) return;
+  if(tab) tab.style.display = hasRoute ? '' : 'none';
+  if(!hasRoute) return;
 
   var result = buildRoute();
   if(!result || !result.route.length) {
@@ -2698,7 +2744,7 @@ function renderRoteiro() {
 
   var route   = result.route;
   var origin  = result.origin;
-  var rs      = S.routeState;
+  var rs      = getRouteState();
 
   // Calcula totais
   var totalWait = route.filter(function(r){ return !r.isAnchor; }).reduce(function(a,r){ return a + (r.wait||0); }, 0);
@@ -2706,16 +2752,19 @@ function renderRoteiro() {
   var totalAtts = route.filter(function(r){ return !r.isAnchor; }).length;
 
   // Fonte da posicao
+  var _entrance = getParkEntrance();
   var originLabel = origin.source === 'gps' ? '📍 Usando sua localizacao atual'
     : origin.source === 'last' ? '📍 A partir de: ' + (origin.name || 'ultima atracao')
-    : '📍 A partir da entrada do EPCOT';
+    : '📍 A partir da entrada do ' + (_entrance.name || 'parque');
 
   var html = '';
 
-  // Badge EPCOT only
-  html += '<div class="rt-epcot-only">✨ Roteiro disponivel somente para EPCOT nesta versao</div>';
+  // Badge do parque atual
+  var parkEmoji = S.park ? S.park.emoji : '🗺️';
+  var parkName  = S.park ? S.park.name  : 'Parque';
+  html += '<div class="rt-epcot-only">' + parkEmoji + ' Roteiro em tempo real &middot; ' + parkName + '</div>';
 
-  // Barra GPS
+  // Barra GPS (rs ja foi declarado acima via getRouteState())
   html += '<div class="rt-gps-bar">'
     + '<div class="rt-gps-dot ' + (rs.gpsActive ? 'on' : 'off') + '"></div>'
     + '<span class="rt-gps-label">' + (rs.gpsActive ? 'GPS ativo' : 'GPS desativado') + '</span>'
@@ -2738,16 +2787,19 @@ function renderRoteiro() {
     var isFirst = idx === 0;
     if(step.isAnchor) {
       var mTo = minsTo(step.startTime);
+      var _isParade = step.name && (step.name.toLowerCase().includes('parade')||step.name.toLowerCase().includes('cavalcade')||step.name.toLowerCase().includes('festival'));
+      var _anchorAreaLabel = _isParade ? 'Evento ancora — posicione-se na rua principal' : 'Evento ancora — posicione-se no ponto de visualizacao';
+      var _antecedencia = _isParade ? '20-30 min' : '15 min';
       html += '<div class="rt-step">'
         + '<div class="rt-step-line">'
         + '<div class="rt-step-node anchor">' + step.icon + '</div>'
         + '<div class="rt-step-connector"></div>'
         + '</div>'
         + '<div class="rt-step-body">'
-        + '<div class="rt-step-time">Em ' + (mTo > 0 ? mTo + ' min' : 'breve') + ' — posicione-se 15 min antes</div>'
+        + '<div class="rt-step-time">Em ' + (mTo > 0 ? mTo + ' min' : 'breve') + ' — posicione-se ' + _antecedencia + ' antes</div>'
         + '<div class="rt-step-card anchor">'
         + '<div class="rt-card-top">'
-        + '<div><div class="rt-card-name">' + step.name + '</div><div class="rt-card-area">Evento ancora — World Showcase</div></div>'
+        + '<div><div class="rt-card-name">' + step.name + '</div><div class="rt-card-area">' + _anchorAreaLabel + '</div></div>'
         + '<div class="rt-card-right"><div class="rt-card-wait" style="color:var(--purple)">' + (mTo > 0 ? mTo : '--') + '</div><div class="rt-card-wait-lbl">min</div></div>'
         + '</div>'
         + '</div></div></div>';
@@ -2803,18 +2855,18 @@ function renderRoteiro() {
 
 function markDoneRoute(id) {
   S.visited.add(id);
-  S.routeState.lastAttId = id;
+  getRouteState().lastAttId = id;
   saveV();
   renderRoteiro();
 }
 
 function skipRoute(id) {
-  S.routeState.dismissed.add(id);
+  getRouteState().dismissed.add(id);
   renderRoteiro();
 }
 
 function toggleGPS() {
-  var rs = S.routeState;
+  var rs = getRouteState();
   if(rs.gpsActive) {
     rs.gpsActive = false; rs.userLat = null; rs.userLng = null;
     renderRoteiro(); return;
