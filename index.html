@@ -785,11 +785,41 @@ function toast(msg){
   document.getElementById('toast-text').textContent=msg;
   document.getElementById('toast').classList.add('show');
   beep();
+  // Notificação nativa — útil quando o app está em background
+  notify('WDW Guide', msg, 'wdw-toast');
   setTimeout(dismissToast,8000);
 }
 function dismissToast(){ document.getElementById('toast').classList.remove('show'); }
 
-/* --- ALERTS CHECK --- */
+/* --- NOTIFICAÇÕES + SERVICE WORKER --- */
+var _swReg = null;
+
+// Registra o Service Worker uma vez ao carregar
+if('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').then(function(reg) {
+    _swReg = reg;
+  }).catch(function(){});
+}
+
+// Solicita permissão de notificação — chamado no primeiro alerta configurado
+function requestNotifPermission(cb) {
+  if(!('Notification' in window)) return cb && cb(false);
+  if(Notification.permission === 'granted') return cb && cb(true);
+  if(Notification.permission === 'denied')  return cb && cb(false);
+  Notification.requestPermission().then(function(p) { cb && cb(p === 'granted'); });
+}
+
+// Dispara notificação nativa via SW (background) ou Notification API (foreground)
+function notify(title, body, tag) {
+  if(!('Notification' in window) || Notification.permission !== 'granted') return;
+  // SW disponível — usa postMessage para exibir mesmo em background
+  if(_swReg && _swReg.active) {
+    _swReg.active.postMessage({ type:'WDW_NOTIFY', title:title, body:body, tag:tag||'wdw-alert' });
+  } else {
+    // Fallback: Notification API direto (só funciona em foreground)
+    try { new Notification(title, { body:body, icon:'/icon-192.png', tag:tag||'wdw-alert' }); } catch(e){}
+  }
+}
 function checkAlerts(ents) {
   if(!S.alerts.length||!S.park) return;
   var now=Date.now();
@@ -1708,6 +1738,13 @@ function saveAlert(){
   S.alerts=S.alerts.filter(function(a){ return a.entityId!==S.modalEnt.id; });
   S.alerts.push({entityId:S.modalEnt.id,name:S.modalEnt.name,parkId:S.park.apiId,type:'queue',threshold:t,lastFired:null});
   saveA(); closeModal(); renderAtt();
+  // Pede permissao de notificacao na primeira vez que um alerta e configurado
+  requestNotifPermission(function(granted) {
+    toast(granted
+      ? '\u26A1 Alerta configurado! Voce sera notificado mesmo com o app em background.'
+      : '\u26A1 Alerta configurado! Ative as notificacoes do browser para receber avisos em background.'
+    );
+  });
 }
 function removeAlert(){
   if(!S.modalEnt) return;
