@@ -441,6 +441,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .rt-btn{font-size:11px;font-family:inherit;border:none;border-radius:8px;padding:6px 12px;cursor:pointer;font-weight:500;}
 .rt-btn-done{background:rgba(52,211,153,.15);color:var(--green);}
 .rt-btn-skip{background:var(--surface2);color:var(--text2);}
+.rt-btn-maps{background:rgba(52,211,153,.08);color:var(--green);border:1px solid rgba(52,211,153,.3);text-decoration:none;margin-left:auto;}
 .rt-trend-up{color:var(--red);}
 .rt-trend-down{color:var(--green);}
 .rt-empty{text-align:center;padding:32px 20px;color:var(--text3);}
@@ -660,12 +661,38 @@ function load() {
     applyTheme(S.theme);
   } catch(e){}
   loadCoords();
+  loadRouteStates();
 }
 var saveV=function(){ localStorage.setItem('wdw_v',JSON.stringify([...S.visited])); };
 var saveA=function(){ localStorage.setItem('wdw_a',JSON.stringify(S.alerts)); };
 var saveT=function(){ localStorage.setItem('wdw_t',S.theme); };
 var saveCoords=function(){ try{ localStorage.setItem('wdw_coords',JSON.stringify(S.coordCache)); }catch(e){} };
 function loadCoords(){ try{ var c=localStorage.getItem('wdw_coords'); if(c) S.coordCache=JSON.parse(c); }catch(e){} }
+function saveRouteStates() {
+  try {
+    var serial = {};
+    Object.keys(S.routeStates).forEach(function(pid) {
+      var rs = S.routeStates[pid];
+      serial[pid] = { userLat:rs.userLat, userLng:rs.userLng, lastAttId:rs.lastAttId,
+        dismissed: rs.dismissed instanceof Set ? Array.from(rs.dismissed) : (rs.dismissed||[]),
+        gpsActive:false, gpsError:null };
+    });
+    localStorage.setItem('wdw_routes', JSON.stringify(serial));
+  } catch(e) {}
+}
+function loadRouteStates() {
+  try {
+    var raw = localStorage.getItem('wdw_routes');
+    if(!raw) return;
+    var parsed = JSON.parse(raw);
+    Object.keys(parsed).forEach(function(pid) {
+      var rs = parsed[pid];
+      S.routeStates[pid] = { userLat:rs.userLat||null, userLng:rs.userLng||null,
+        lastAttId:rs.lastAttId||null, dismissed:new Set(Array.isArray(rs.dismissed)?rs.dismissed:[]),
+        gpsActive:false, gpsError:null };
+    });
+  } catch(e) {}
+}
 
 /* Busca coordenadas de uma atracao via /entity/{id} — cache 24h */
 async function fetchCoords(id) {
@@ -680,7 +707,7 @@ async function fetchCoords(id) {
     var lng = d.location&&d.location.longitude;
     if(lat&&lng){
       S.coordCache[id] = {lat:lat, lng:lng, fetchedAt:Date.now()};
-      saveCoords();
+      // saveCoords() e chamado pelo prefetchCoords apos o lote completo — nao a cada item
       return S.coordCache[id];
     }
   } catch(e){}
@@ -689,7 +716,6 @@ async function fetchCoords(id) {
 
 /* Pre-carrega coords de todas as atracoes em background (sem bloquear UI) */
 async function prefetchCoords(attractions) {
-  // Filtra apenas os que nao temos cache valido
   var HOUR24 = 24*3600*1000;
   var missing = attractions.filter(function(e){
     var c = S.coordCache[e.id];
@@ -701,6 +727,8 @@ async function prefetchCoords(attractions) {
     var batch = missing.slice(i, i+5);
     await Promise.allSettled(batch.map(function(e){ return fetchCoords(e.id); }));
   }
+  // Um unico write no localStorage apos o lote inteiro — antes eram N writes, um por coord
+  saveCoords();
   // Re-renderiza atracoes com coords atualizadas
   renderAtt();
 }
@@ -722,7 +750,20 @@ function fmt(iso) {
 function minsTo(iso){ return iso?Math.floor((new Date(iso)-Date.now())/60000):null; }
 function wColor(w){ if(w==null)return'var(--text3)'; if(w<=20)return'var(--green)'; if(w<=40)return'var(--gold)'; if(w<=60)return'var(--orange)'; return'var(--red)'; }
 function bClass(pct){ if(pct<=25)return'low'; if(pct<=55)return'mid'; return'high'; }
-function todayStr(){ var t=new Date(); return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0'); }
+function todayStr(){
+  // Usa Eastern Time (timezone do parque) para evitar desvio quando e meia-noite no Brasil mas ainda e dia anterior em Orlando
+  try {
+    var et = new Date().toLocaleDateString('en-CA', {timeZone:'America/New_York'});
+    return et; // formato YYYY-MM-DD
+  } catch(e) {
+    var t=new Date(); return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0');
+  }
+}
+function nowInET() {
+  // Date.now() e Date.parse(isoWithOffset) sao ambos UTC — a comparacao e sempre correta
+  // independente do timezone do browser, seja Sao Paulo ou Orlando
+  return Date.now();
+}
 function isToday(d){ return d===todayStr(); }
 function isPast(d){ var t=new Date(); t.setHours(0,0,0,0); return new Date(d)<t; }
 
@@ -787,7 +828,15 @@ var STATIC = {
   'small-world':            {area:'Fantasyland',       covered:true,  duration:11, lat:28.42159, lng:-81.58174, desc:'Embarque em um passeio fantastico, passando por um alegre coral de criancas de todo o mundo.'},
   'pirates':                {area:'Adventureland',     covered:true,  duration:9,  lat:28.41840, lng:-81.58300, desc:'Aventure-se navegando para um tempo e lugar ha muito esquecidos quando piratas e corsarios dominavam os mares.'},
   'winnie-pooh':            {area:'Fantasyland',       covered:true,  duration:5,  lat:28.42083, lng:-81.58040, desc:'Viaje pelo Cem Paus de Madeiro em um Pote de Mel gigante e se perca nas paginas dos classicos contos de A.A. Milne.'},
-  'dumbo':                  {area:'Storybook Circus',  covered:false, duration:2,  lat:28.42165, lng:-81.57900, desc:'Decole rumo ao ceu e veja um elefante voar em um voo fantastico a bordo do Dumbo.'},
+  'casey-jr':               {area:'Storybook Circus',  covered:false, duration:5,  lat:28.42220, lng:-81.57870, desc:'Estacao de agua interativa inspirada no trem do Dumbo — otima para se refrescar.'},
+  'carousel-progress':      {area:'Tomorrowland',      covered:true,  duration:21, lat:28.41820, lng:-81.57830, desc:'Teatro giratório com cenas animatronicas mostrando a evolucao tecnologica americana ao longo do seculo XX.'},
+  'main-street-vehicles':   {area:'Main Street U.S.A.', covered:false, duration:10, lat:28.41770, lng:-81.58000, desc:'Passeio nostalgico pelo Main Street em bondes, omnibus e carros antigos da virada do seculo XX.'},
+  'swiss-treehouse':        {area:'Adventureland',     covered:false, duration:10, lat:28.41815, lng:-81.58395, desc:'Explore a casa na arvore da Familia Robinson Suica e aprecie a vista do parque.'},
+  'peoplemover':            {area:'Tomorrowland',      covered:true,  duration:10, lat:28.41870, lng:-81.57760, desc:'Passeio tranquilo e panoramico pelos ares de Tomorrowland — otimo para descansar os pes.'},
+  'enchanted-belle':        {area:'Fantasyland',       covered:true,  duration:20, lat:28.42095, lng:-81.58230, desc:'Experiencia interativa onde voce entra no conto da Bela e a Fera com a propria Bela.'},
+  'magic-carpets':          {area:'Adventureland',     covered:false, duration:2,  lat:28.41830, lng:-81.58355, desc:'Voe em um tapete magico de Aladdin e controle altitude e inclinacao.'},
+  'pirates-adventure':      {area:'Adventureland',     covered:false, duration:15, lat:28.41845, lng:-81.58320, desc:'Jogo de caca ao tesouro interativo pelo Adventureland seguindo o mapa do Capetao Jack Sparrow.'},
+  'barnstormer':            {area:'Storybook Circus',  covered:false, duration:2,  lat:28.42198, lng:-81.57952, desc:'Mini montanha-russa ideal para criancas, com o Grande Goofini em acrobacias aereas.'},
   'little-mermaid':         {area:'Storybook Circus',  covered:true,  duration:7,  lat:28.42130, lng:-81.57840, desc:'Embarque em uma concha e entre no mundo de Ariel em uma aventura musical repleta de cenas do classico de animacao.'},
   'carrousel':              {area:'Fantasyland',       covered:false, duration:3,  lat:28.42010, lng:-81.58117, desc:'Monte em um cavalo real e galope por um cenario giratório com cores maravilhosas e musicas fantasticas.'},
   'mad-tea-party':          {area:'Fantasyland',       covered:false, duration:2,  lat:28.42112, lng:-81.58040, desc:'Rodopie em uma xicara de cha gigante durante um redemoinho maluco com muita musica.'},
@@ -832,7 +881,8 @@ var STATIC = {
   'galaxy-far-away':        {area:'Hollywood Boulevard', covered:false,duration:20, lat:28.35930, lng:-81.56040, desc:'Show ao vivo com clipes de filmes, pirotecnia e personagens iconicos como Darth Vader, Chewbacca e Kylo Ren.'},
   'droid-depot':            {area:"Star Wars: Galaxy's Edge", covered:true, duration:30, lat:28.35310, lng:-81.56333, desc:'Monte seu proprio droid no deposito industrial do Black Spire Outpost.'},
   'savis-workshop':         {area:"Star Wars: Galaxy's Edge", covered:true, duration:30, lat:28.35286, lng:-81.56310, desc:'Monte seu proprio sabre de luz personalizado nesta oficina secreta e continue no caminho da Forca.'},
-  'little-mermaid-hs':      {area:'Animation Courtyard', covered:true, duration:17, lat:28.35714, lng:-81.55968, desc:'Reviva a historia encantadora de Ariel nesta deslumbrante producao teatral inspirada no classico de animacao The Little Mermaid.'},
+  'vacation-fun':           {area:'Animation Courtyard', covered:true,  duration:25, lat:28.35714, lng:-81.55980, desc:'Curta-metragem animado original com Mickey e Minnie em aventuras de ferias ao redor do mundo.'},
+  'disney-presents':        {area:'Hollywood Boulevard', desc:'Galeria e exposicao com historia dos estúdios Disney, previews de filmes e memorabilia.'},
   'fantasmic':              {area:'Sunset Boulevard',  covered:false, duration:30, lat:28.35498, lng:-81.56300, desc:'Presencie as forcas do bem e do mal se confrontarem no sonho do Mickey neste extravagante musical noturno ao ar livre.'},
   'wonderful-animation':    {area:'Hollywood Boulevard', covered:true, duration:40, lat:28.35930, lng:-81.56040, desc:'Faca parte da aventura entrando em uma colecao de filmes de animacao novos, classicos e raramente vistos em projecoes cinematograficas.'},
   'movie-magic':            {area:'Hollywood Boulevard', covered:false,duration:12, lat:28.35930, lng:-81.56040, desc:'Show de projecoes noturno de 10 a 12 minutos destacando Indiana Jones e os Piratas do Caribe na fachada do Teatro Chines.'},
@@ -858,6 +908,24 @@ var STATIC = {
   'voices-liberty':         {area:'World Showcase - EUA',    covered:true,  duration:30, lat:28.36996, lng:-81.55155, desc:'Harmonias cristalinas a cappella celebrando a experiencia americana.'},
   'american-adventure':     {area:'World Showcase - EUA',    covered:true,  duration:30, lat:28.36970, lng:-81.55150, desc:'Narrativa inspiradora da historia dos Estados Unidos.'},
   'luminous-symphony':      {area:'World Showcase - Lago',   covered:false, duration:20, lat:28.37025, lng:-81.55155, desc:'Espetaculo noturno que ilumina o ceu sobre a World Showcase Lagoon.'},
+  /* Atracoes com roteiro (lat/duration) */
+  'imageworks':             {area:'World Celebration',       covered:true,  duration:15, lat:28.37284, lng:-81.55120, desc:'Espaco interativo de experiencias digitais e criativas ao lado do Journey Into Imagination.'},
+  'awesome-planet':         {area:'World Nature',            covered:true,  duration:9,  lat:28.37220, lng:-81.54960, desc:'Filme de 9 minutos celebrando a beleza e diversidade do planeta Terra.'},
+  'journey-of-water':       {area:'World Nature',            covered:false, duration:20, lat:28.37300, lng:-81.54870, desc:'Trilha aquatica interativa inspirada no ciclo da agua em Moana — explore e brinque com agua.'},
+  'beauty-beast-ep':        {area:'World Showcase - Franca', covered:true,  duration:20, lat:28.36820, lng:-81.55010, desc:'Sing-Along imersivo com cenas do classico A Bela e a Fera no Palais du Cinema.'},
+  'palais-cinema':          {area:'World Showcase - Franca', covered:true,  duration:20, lat:28.36820, lng:-81.55010, desc:'Teatro elegante no Pavilhao da Franca que exibe filmes e apresentacoes culturais.'},
+  'project-tomorrow':       {area:'World Discovery',         covered:true,  duration:10, lat:28.37390, lng:-81.54870, desc:'Exposicao interativa sobre inovacoes tecnologicas do futuro logo apos o Test Track.'},
+  /* Galerias — sem lat/duration, aparecem na aba Atracoes mas nao no roteiro */
+  'mexico-gallery':         {area:'World Showcase - Mexico', desc:'Galeria de arte popular mexicana dentro da piramide do Pavilhao do Mexico.'},
+  'stave-church':           {area:'World Showcase - Noruega',desc:'Replica de uma igreja de madeira norueguesa do seculo XIII com exposicao historica.'},
+  'kidcot':                 {area:'World Showcase',          desc:'Estacoes de atividades criativas distribuidas pelos pavilhoes do World Showcase.'},
+  'arts-history-gallery':   {area:'World Showcase - Marrocos',desc:'Galeria com artefatos e obras de arte representando a historia e cultura do Marrocos.'},
+  'whispering-willows':     {area:'World Showcase - China',  desc:'Galeria de arte e cultura chinesa dentro do Pavilhao da China.'},
+  'seabase':                {area:'World Nature',            desc:'Aquario de dois andares com raias, tartarugas e tubaroes — entrada livre apos o Nemo.'},
+  'bruce-shark':            {area:'World Nature',            desc:'Area tematica com tubaroes e vida marinha inspirada em Buscando Nemo.'},
+  'advanced-training-lab':  {area:'World Discovery',         desc:'Area interativa de missao espacial complementar ao Mission: SPACE.'},
+  'american-heritage':      {area:'World Showcase - EUA',    desc:'Galeria com artefatos historicos americanos ao lado do The American Adventure.'},
+  'bijutsu-kan':            {area:'World Showcase - Japao',  desc:'Galeria de arte japonesa com exposicoes rotativas de artistas contemporaneos.'},
   'mariachi-cobre':         {area:'World Showcase - Mexico', desc:'Balance ao som de uma musica vibrante e curta a apresentacao desses musicos cheios de energia.'},
   'matsuriza':              {area:'World Showcase - Japao', desc:'Descubra o trovejante som do Taiko, uma antiga arte percussiva japonesa.'},
   'mora-show':              {area:'World Showcase - Marrocos', desc:'Apresentacao cultural ao vivo no Pavilhao do Marrocos.'},
@@ -883,8 +951,17 @@ function getStatic(e) {
   if(n.includes('seven dwarfs')||n.includes('sete anoes')) return STATIC['seven-dwarfs'];
   if(n.includes('peter pan'))            return STATIC['peter-pan'];
   if(n.includes('small world'))          return STATIC['small-world'];
+  if(n.includes("pirate's adventure")||n.includes('pirates adventure')||n.includes('treasures of the seven')) return STATIC['pirates-adventure'];
   if(n.includes('pirates'))              return STATIC['pirates'];
   if(n.includes('winnie')||n.includes('pooh')) return STATIC['winnie-pooh'];
+  if(n.includes('barnstormer'))          return STATIC['barnstormer'];
+  if(n.includes('casey jr'))             return STATIC['casey-jr'];
+  if(n.includes('carousel of progress')) return STATIC['carousel-progress'];
+  if(n.includes('main street vehicles')) return STATIC['main-street-vehicles'];
+  if(n.includes('swiss family'))         return STATIC['swiss-treehouse'];
+  if(n.includes('peoplemover')||n.includes('people mover')||n.includes('transit authority')) return STATIC['peoplemover'];
+  if(n.includes('enchanted tales')||n.includes('tales with belle')) return STATIC['enchanted-belle'];
+  if(n.includes('magic carpets')||n.includes('aladdin')) return STATIC['magic-carpets'];
   if(n.includes('dumbo'))                return STATIC['dumbo'];
   if(n.includes('little mermaid')&&!n.includes('voyage')) return STATIC['little-mermaid'];
   if(n.includes('carrousel')||n.includes('carousel')||n.includes('regal')) return STATIC['carrousel'];
@@ -907,6 +984,8 @@ function getStatic(e) {
   if(n.includes('friendship faire'))     return STATIC['friendship-faire'];
   if(n.includes('cavalcade'))            return STATIC['cavalcade'];
   /* -- Hollywood Studios -- */
+  if(n.includes('vacation fun')||n.includes('animated short')&&n.includes('mickey')) return STATIC['vacation-fun'];
+  if(n.includes('walt disney presents')||n.includes('disney presents')) return STATIC['disney-presents'];
   if(n.includes('mickey')&&(n.includes('runaway')||n.includes('railway'))) return STATIC['mickey-runaway'];
   if(n.includes('slinky'))               return STATIC['slinky-dog'];
   if(n.includes('toy story mania'))      return STATIC['toy-story-mania'];
@@ -932,7 +1011,7 @@ function getStatic(e) {
   if(n.includes('frozen ever after')||n.includes('frozen')&&n.includes('ever after')) return STATIC['frozen'];
   if(n.includes('harmonious'))           return STATIC['harmonious'];
   if(n.includes('luminous'))             return STATIC['luminous'];
-  if(n.includes('figment')||n.includes('imagination')) return STATIC['figment'];
+  if(n.includes('figment')||n.includes('journey into imagination')) return STATIC['figment'];
   if(n.includes('living with the land')) return STATIC['living-land'];
   if(n.includes('nemo')||n.includes('seas with')) return STATIC['nemo'];
   if(n.includes('turtle talk'))          return STATIC['turtle-talk'];
@@ -940,11 +1019,27 @@ function getStatic(e) {
   if(n.includes('spaceship earth'))      return STATIC['spaceship-earth'];
   if(n.includes('mission')&&n.includes('space')) return STATIC['mission-space'];
   if(n.includes('gran fiesta')||n.includes('three caballeros')) return STATIC['gran-fiesta'];
-  if(n.includes('reflections of china')||n.includes('china')&&n.includes('circle')) return STATIC['china-film'];
-  if(n.includes('canada far')||n.includes('o canada')||n.includes('canada!')&&n.includes('circle')) return STATIC['canada-film'];
+  if(n.includes('reflections of china')||n.includes('china')&&n.includes('circle')||n.includes('china')&&n.includes('vision')) return STATIC['china-film'];
+  if(n.includes('canada far')||n.includes('o canada')||n.includes('canada')&&n.includes('circle')||n.includes('canada')&&n.includes('vision')) return STATIC['canada-film'];
   if(n.includes('impressions de france')||n.includes('impressions of france')) return STATIC['impressions-france'];
   if(n.includes('voices of liberty'))    return STATIC['voices-liberty'];
   if(n.includes('american adventure'))   return STATIC['american-adventure'];
+  if(n.includes('imageworks')||n.includes('what if labs')) return STATIC['imageworks'];
+  if(n.includes('awesome planet'))       return STATIC['awesome-planet'];
+  if(n.includes('journey of water')||n.includes('moana')&&n.includes('water')) return STATIC['journey-of-water'];
+  if(n.includes('beauty')&&n.includes('beast')&&n.includes('sing')) return STATIC['beauty-beast-ep'];
+  if(n.includes('palais du cinema')||n.includes('palais du cin')) return STATIC['palais-cinema'];
+  if(n.includes('project tomorrow'))     return STATIC['project-tomorrow'];
+  if(n.includes('mexico folk art')||n.includes('folk art gallery')) return STATIC['mexico-gallery'];
+  if(n.includes('stave church'))         return STATIC['stave-church'];
+  if(n.includes('kidcot'))               return STATIC['kidcot'];
+  if(n.includes('gallery of arts')||n.includes('arts and history')) return STATIC['arts-history-gallery'];
+  if(n.includes('whispering willows'))   return STATIC['whispering-willows'];
+  if(n.includes('seabase')||n.includes('sea base')) return STATIC['seabase'];
+  if(n.includes("bruce's shark")||n.includes('shark world')) return STATIC['bruce-shark'];
+  if(n.includes('advanced training'))    return STATIC['advanced-training-lab'];
+  if(n.includes('american heritage'))    return STATIC['american-heritage'];
+  if(n.includes('bijutsu'))              return STATIC['bijutsu-kan'];
   /* -- Shows Halloween MK -- */
   if(n.includes('boo-to-you')||n.includes('boo to you')) return STATIC['boo-to-you'];
   if(n.includes('hocus pocus'))          return STATIC['hocus-pocus'];
@@ -1030,7 +1125,14 @@ function buildHomeSkeleton() {
 
 async function loadHomePark(p) {
   try {
-    var d=await fetchPark(p.apiId);
+    // Carrega schedule e liveData em paralelo
+    var results = await Promise.allSettled([
+      fetchPark(p.apiId),
+      fetchTodaySchedule(p)
+    ]);
+    var d = results[0].status === 'fulfilled' ? results[0].value : {liveData:[]};
+    var schedData = results[1].status === 'fulfilled' ? results[1].value : null;
+
     var ents=d.liveData||[];
     var open=ents.filter(function(e){ return e.entityType==='ATTRACTION'&&e.status==='OPERATING'&&e.queue&&e.queue.STANDBY&&e.queue.STANDBY.waitTime!=null; });
     var shows=ents.filter(function(e){ return e.entityType==='SHOW'&&e.showtimes&&e.showtimes.length>0; });
@@ -1039,24 +1141,34 @@ async function loadHomePark(p) {
     var hrs='Horario indisponivel';
     var parkOpen = false;
     var closingTime = null;
-    for(var i=0;i<ents.length;i++){
-      var ent=ents[i]; if(!ent.operatingHours||!ent.operatingHours.length) continue;
-      var op=ent.operatingHours.find(function(h){
-        var t=(h.type||'').toLowerCase();
-        return(t==='operating'||t==='park_hours'||t==='open')&&!t.includes('extra')&&!t.includes('magic')&&!t.includes('early');
-      });
-      if(op){
-        hrs=fmt(op.startTime)+' \u2013 '+fmt(op.endTime);
-        closingTime = op.endTime;
-        // Parque aberto se agora esta entre abertura e fechamento
-        var now=new Date();
-        var start=new Date(op.startTime);
-        var end=new Date(op.endTime);
-        parkOpen = now>=start && now<=end;
-        break;
+
+    // Fonte 1: schedule do dia (carregado acima em paralelo)
+    var todayEntry = schedData ? getTodayEntry(schedData) : null;
+    if(todayEntry && todayEntry.openingTime && todayEntry.closingTime){
+      hrs = fmt(todayEntry.openingTime) + ' \u2013 ' + fmt(todayEntry.closingTime);
+      closingTime = todayEntry.closingTime;
+      var _nowMs = Date.now();
+      parkOpen = _nowMs >= Date.parse(todayEntry.openingTime) && _nowMs <= Date.parse(todayEntry.closingTime);
+    }
+
+    // Fonte 2: operatingHours das atracoes (fallback se schedule falhou)
+    if(!closingTime){
+      for(var i=0;i<ents.length;i++){
+        var ent=ents[i]; if(!ent.operatingHours||!ent.operatingHours.length) continue;
+        var op=ent.operatingHours.find(function(h){
+          var t=(h.type||'').toLowerCase();
+          return(t==='operating'||t==='park_hours'||t==='open')&&!t.includes('extra')&&!t.includes('magic')&&!t.includes('early');
+        });
+        if(op){
+          hrs=fmt(op.startTime)+' \u2013 '+fmt(op.endTime);
+          closingTime = op.endTime;
+          var _nowMs2 = Date.now();
+          parkOpen = _nowMs2 >= Date.parse(op.startTime) && _nowMs2 <= Date.parse(op.endTime);
+          break;
+        }
       }
     }
-    // Fallback: se ha atracoes operando, considera aberto
+    // Fonte 3: se ha atracoes operando, considera aberto
     if(!closingTime && open.length > 0) parkOpen = true;
 
     var dotClass = parkOpen ? 'park-hours-dot' : 'park-hours-dot closed';
@@ -1100,7 +1212,13 @@ async function loadPark() {
     // #2, #3, #1, #5, #7 — carrega schedule do dia
     loadTodaySchedule();
   } catch(e) {
-    document.getElementById('park-ticker').textContent='Erro ao carregar. Tente novamente.';
+    // Mostra banner de erro com botao de retry direto — rede instavel no parque e comum
+    var ticker = document.getElementById('park-ticker');
+    if(ticker) ticker.innerHTML =
+      '<span style="color:var(--red)">&#9888;&#xFE0F; Falha ao carregar.</span> '
+      + '<button onclick="refreshPark()" style="background:none;border:none;color:var(--blue);'
+      + 'font-size:inherit;cursor:pointer;font-family:inherit;padding:0;text-decoration:underline;">'
+      + 'Tentar novamente</button>';
   }
   btn.classList.remove('spinning');
 }
@@ -1110,7 +1228,49 @@ async function refreshPark() {
   S.timers.refresh=setInterval(loadPark,REFRESH);
 }
 
+/* Pausa o refresh quando o app vai para background e retoma ao voltar,
+   forcando um reload imediato para compensar o tempo perdido.
+   Economiza bateria e dados no parque. */
+document.addEventListener('visibilitychange', function() {
+  if(!S.park) return;
+  if(document.hidden) {
+    // App foi para background — pausa o timer e guarda quando saiu
+    clearInterval(S.timers.refresh);
+    S._hiddenAt = Date.now();
+  } else {
+    // App voltou a ficar visivel
+    var elapsed = S._hiddenAt ? (Date.now() - S._hiddenAt) : 0;
+    S._hiddenAt = null;
+    // Se ficou oculto por mais de 1 min, atualiza imediatamente
+    if(elapsed > 60000) {
+      loadPark();
+    }
+    // Reinicia o timer normal de qualquer forma
+    clearInterval(S.timers.refresh);
+    S.timers.refresh = setInterval(loadPark, REFRESH);
+  }
+});
+
 function renderHeader() {
+  var hoursEl = document.getElementById('ph-hours');
+  var dotEl = document.querySelector('.ph-dot');
+  function setHeader(openingTime, closingTime) {
+    var hrs = fmt(openingTime) + ' \u2013 ' + fmt(closingTime);
+    var nowMs = Date.now();
+    var parkOpen = nowMs >= Date.parse(openingTime) && nowMs <= Date.parse(closingTime);
+    if(hoursEl) hoursEl.textContent = parkOpen ? hrs : 'Fechado \u00b7 ' + hrs;
+    if(dotEl) { dotEl.style.background = parkOpen ? 'var(--green)' : 'var(--red)'; dotEl.style.animation = parkOpen ? '' : 'none'; }
+  }
+
+  // Fonte 1: schedule do dia (ja populado pelo init antes de abrir o parque)
+  var schedKey = S.park.apiId+'_'+new Date().getFullYear()+'_'+(new Date().getMonth()+1);
+  var sched = S.scheduleCache[schedKey] ? S.scheduleCache[schedKey].data : null;
+  var todayEntry = sched ? getTodayEntry(sched) : null;
+  if(todayEntry && todayEntry.openingTime && todayEntry.closingTime){
+    setHeader(todayEntry.openingTime, todayEntry.closingTime);
+    return;
+  }
+  // Fonte 2: operatingHours das atracoes (fallback)
   var ops=S.live.filter(function(e){
     if(!e.operatingHours||!e.operatingHours.length) return false;
     return e.operatingHours.some(function(h){
@@ -1123,12 +1283,12 @@ function renderHeader() {
       var t=(h.type||'').toLowerCase();
       return(t==='operating'||t==='park_hours'||t==='open')&&!t.includes('extra')&&!t.includes('magic')&&!t.includes('early');
     });
-    if(op){ document.getElementById('ph-hours').textContent=fmt(op.startTime)+' - '+fmt(op.endTime); return; }
+    if(op){ setHeader(op.startTime, op.endTime); return; }
   }
   var anyH=S.live.find(function(e){ return e.operatingHours&&e.operatingHours.some(function(h){ return h.type==='Operating'; }); });
   if(anyH){
     var op2=anyH.operatingHours.find(function(h){ return h.type==='Operating'; });
-    if(op2) document.getElementById('ph-hours').textContent=fmt(op2.startTime)+' - '+fmt(op2.endTime);
+    if(op2) setHeader(op2.startTime, op2.endTime);
   }
 }
 
@@ -2644,6 +2804,8 @@ function buildRoute() {
     if(rs.dismissed.has(e.id)) return false;
     var sd = getStatic(e);
     if(!sd) return false;
+    // Galerias e espacos sem coordenadas ficam fora do roteiro mas aparecem na aba Atracoes
+    if(!sd.lat) return false;
     return true;
   });
 
@@ -2845,6 +3007,16 @@ function renderRoteiro() {
       + '<div class="rt-card-actions">'
       + (!isClosed ? '<button class="rt-btn rt-btn-done" onclick="markDoneRoute(\'' + e.id + '\')">✓ Feito</button>' : '')
       + '<button class="rt-btn rt-btn-skip" onclick="skipRoute(\'' + e.id + '\')">Pular</button>'
+      + (function(){
+          var _c = S.coordCache[e.id];
+          var _sd = getStatic(e);
+          var _lat = _c ? _c.lat : (_sd ? _sd.lat : null);
+          var _lng = _c ? _c.lng : (_sd ? _sd.lng : null);
+          var _url = _lat
+            ? 'https://www.google.com/maps/dir/?api=1&destination=' + _lat + ',' + _lng + '&travelmode=walking'
+            : 'https://www.google.com/maps/search/' + encodeURIComponent(e.name + ' Walt Disney World');
+          return '<a href="' + _url + '" target="_blank" class="rt-btn rt-btn-maps" title="Abrir no Maps">\uD83D\uDCCD</a>';
+        })()
       + '</div>'
       + '</div></div></div>';
   });
@@ -2857,11 +3029,13 @@ function markDoneRoute(id) {
   S.visited.add(id);
   getRouteState().lastAttId = id;
   saveV();
+  saveRouteStates();
   renderRoteiro();
 }
 
 function skipRoute(id) {
   getRouteState().dismissed.add(id);
+  saveRouteStates();
   renderRoteiro();
 }
 
@@ -2876,6 +3050,7 @@ function toggleGPS() {
     rs.userLat = pos.coords.latitude;
     rs.userLng = pos.coords.longitude;
     rs.gpsActive = true; rs.gpsError = null;
+    saveRouteStates();
     renderRoteiro();
   }, function(err) {
     rs.gpsError = 'Permissao de localizacao negada.';
@@ -2887,12 +3062,46 @@ function toggleGPS() {
 /* --- INIT --- */
 async function init() {
   load();
+
+  // Atualiza texto e barra de progresso durante o carregamento
+  var ldText = document.getElementById('ld-text') || document.querySelector('.ld-text');
+  var ldFill = document.querySelector('.ld-fill');
+  function setProgress(pct, msg) {
+    if(ldFill) ldFill.style.width = pct + '%';
+    if(ldText && msg) ldText.textContent = msg;
+  }
+
+  setProgress(10, 'Carregando magia...');
+
+  // Carrega schedule e liveData de todos os parques em paralelo antes de renderizar qualquer coisa
+  // Assim o status aberto/fechado ja tem todos os dados na primeira renderizacao
+  var parkJobs = PARKS.map(function(p) {
+    return Promise.allSettled([
+      fetchPark(p.apiId),
+      fetchTodaySchedule(p)
+    ]).then(function(results) {
+      return { park: p, live: results[0], sched: results[1] };
+    });
+  });
+
+  setProgress(30, 'Buscando horários dos parques...');
+
+  var allResults = await Promise.allSettled(parkJobs);
+
+  setProgress(75, 'Calculando status...');
+
+  // Agora que tudo chegou, renderiza a home com dados completos
   buildHomeSkeleton();
   renderHomeWeather();
-  await Promise.allSettled(PARKS.map(function(p){ return loadHomePark(p); }));
-  document.getElementById('home-ticker').textContent='Atualizado as '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  await Promise.allSettled(PARKS.map(function(p) { return loadHomePark(p); }));
+
+  setProgress(95, 'Quase lá...');
+
+  document.getElementById('home-ticker').textContent = 'Atualizado as ' + new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
   updateHomeEarlyBadges();
-  setTimeout(function(){ document.getElementById('loading').classList.add('hide'); },900);
+
+  setProgress(100, 'Pronto!');
+  setTimeout(function(){ document.getElementById('loading').classList.add('hide'); }, 600);
 }
 init();
 </script>
