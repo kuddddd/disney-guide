@@ -1,3 +1,117 @@
+var _map = null;
+var _areaLayers = [];
+var _userMarker = null;
+var _mapGpsWatch = null;
+
+var MAP_CONFIG = {
+  '75ea578a-adc8-4116-a54d-dccb60765ef9': { center:[28.4199, -81.5808], zoom:17 },
+  '47f90d2c-e191-4239-a466-5892ef59a88b': { center:[28.3747, -81.5498], zoom:16 },
+  '288747d1-8b4f-4a64-867e-ea7c9b27bad8': { center:[28.3582, -81.5601], zoom:17 },
+};
+
+function initMap() {
+  if(!S.park) return;
+  var cfg = MAP_CONFIG[S.park.apiId];
+  if(!cfg) return;
+  if(_map) { _map.remove(); _map=null; _areaLayers=[]; _userMarker=null; }
+  _map = L.map('park-map', {zoomControl:true}).setView(cfg.center, cfg.zoom);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution:'\u00a9 <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxZoom:19,
+  }).addTo(_map);
+  updateHeatMap();
+  startMapGPS();
+}
+
+function updateHeatMap() {
+  if(!_map || !S.att) return;
+  _areaLayers.forEach(function(l){ _map.removeLayer(l); });
+  _areaLayers = [];
+
+  // Agrupa atracoes abertas por area, calcula centroide e media de fila
+  var areaMap = {};
+  S.att.forEach(function(e) {
+    var sd = getStatic(e); if(!sd||!sd.lat) return;
+    if(e.status !== 'OPERATING') return;
+    var wait = e.queue&&e.queue.STANDBY&&e.queue.STANDBY.waitTime;
+    var area = sd.area || 'Outros';
+    if(!areaMap[area]) areaMap[area] = { lats:[], lngs:[], waits:[], names:[] };
+    areaMap[area].lats.push(sd.lat);
+    areaMap[area].lngs.push(sd.lng);
+    areaMap[area].waits.push(wait != null ? wait : 0);
+    areaMap[area].names.push({ name:e.name, wait:wait });
+  });
+
+  Object.keys(areaMap).forEach(function(area) {
+    var d = areaMap[area];
+    var lat = d.lats.reduce(function(a,b){return a+b;},0)/d.lats.length;
+    var lng = d.lngs.reduce(function(a,b){return a+b;},0)/d.lngs.length;
+    var validWaits = d.waits.filter(function(w){return w>0;});
+    var avgWait = validWaits.length ? Math.round(validWaits.reduce(function(a,b){return a+b;},0)/validWaits.length) : 0;
+
+    var color = avgWait===0?'#94a3b8':avgWait<=15?'#22c55e':avgWait<=30?'#84cc16':avgWait<=50?'#f59e0b':avgWait<=70?'#ef4444':'#7f1d1d';
+    var label = avgWait===0?'Sem fila':avgWait<=15?'Tranquilo':avgWait<=30?'Moderado':avgWait<=50?'Movimentado':avgWait<=70?'Cheio':'Muito cheio';
+
+    var attList = d.names
+      .sort(function(a,b){ return (a.wait||0)-(b.wait||0); })
+      .map(function(x){
+        var wLabel = x.wait!=null ? x.wait+' min' : 'sem fila';
+        var wColor = x.wait==null?'#94a3b8':x.wait<=15?'#22c55e':x.wait<=30?'#84cc16':x.wait<=50?'#f59e0b':'#ef4444';
+        return '<div style="display:flex;justify-content:space-between;gap:12px;padding:3px 0;border-bottom:1px solid #eee">'
+          +'<span style="font-size:11px">'+x.name+'</span>'
+          +'<span style="font-size:11px;font-weight:700;color:'+wColor+';white-space:nowrap">'+wLabel+'</span>'
+          +'</div>';
+      }).join('');
+
+    var popupHtml = '<div style="min-width:180px">'
+      +'<div style="font-weight:700;font-size:13px;margin-bottom:4px">'+area+'</div>'
+      +'<div style="font-size:11px;color:'+color+';font-weight:600;margin-bottom:8px">'+label+(avgWait>0?' &middot; '+avgWait+' min m\u00e9dia':'')+'</div>'
+      +attList+'</div>';
+
+    var circle = L.circle([lat, lng], {
+      radius: 180,
+      color: color,
+      fillColor: color,
+      fillOpacity: 0.35,
+      weight: 2,
+      opacity: 0.7,
+    }).bindPopup(popupHtml).addTo(_map);
+
+    var labelIcon = L.divIcon({
+      className: '',
+      html: '<div style="background:'+color+';color:#fff;border-radius:10px;padding:2px 7px;font-size:10px;font-weight:700;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.3);">'+label+'</div>',
+      iconAnchor: [40, 10],
+    });
+    var labelMarker = L.marker([lat, lng], { icon:labelIcon, interactive:false, zIndexOffset:500 }).addTo(_map);
+
+    _areaLayers.push(circle);
+    _areaLayers.push(labelMarker);
+  });
+}
+
+function startMapGPS() {
+  if(!navigator.geolocation) return;
+  if(_mapGpsWatch) navigator.geolocation.clearWatch(_mapGpsWatch);
+  _mapGpsWatch = navigator.geolocation.watchPosition(function(pos) {
+    var lat=pos.coords.latitude, lng=pos.coords.longitude;
+    if(_userMarker) {
+      _userMarker.setLatLng([lat,lng]);
+    } else {
+      var icon = L.divIcon({
+        className:'',
+        html:'<div style="width:16px;height:16px;background:#3b82f6;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 4px rgba(59,130,246,0.35);"></div>',
+        iconSize:[16,16], iconAnchor:[8,8],
+      });
+      _userMarker = L.marker([lat,lng],{icon:icon,zIndexOffset:1000})
+        .bindPopup('Voc\u00ea est\u00e1 aqui').addTo(_map);
+    }
+  }, function(){}, {enableHighAccuracy:true, maximumAge:5000, timeout:10000});
+}
+
+function stopMapGPS() {
+  if(_mapGpsWatch){ navigator.geolocation.clearWatch(_mapGpsWatch); _mapGpsWatch=null; }
+  if(_userMarker&&_map){ _map.removeLayer(_userMarker); _userMarker=null; }
+}
 <!DOCTYPE html>
 <html lang="pt-BR" data-theme="light">
 <head>
@@ -5,6 +119,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>WDW Guide</title>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Inter:wght@300;400;500;600&family=Pacifico&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
 /* --- TOKENS LIGHT (padrão) --- */
 :root {
@@ -404,7 +520,42 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .itin-step-body{flex:1;min-width:0;}
 .itin-step-area{font-size:13px;font-weight:500;color:var(--text);}
 .itin-step-pct{font-size:11px;margin-top:2px;}
-.itin-step-tip{font-size:11px;color:var(--text2);line-height:1.4;margin-top:3px;}
+/* --- MAPA DE CALOR --- */
+#panel-mapa { position:relative; padding:0 !important; }
+.map-overlay {
+  position:absolute; z-index:1000; background:var(--surface);
+  border-radius:14px; padding:12px 14px; box-shadow:0 4px 20px var(--shadow);
+  max-width:220px; max-height:55vh; overflow-y:auto;
+  border:1px solid var(--border); font-size:12px;
+  transition:opacity .2s;
+}
+.map-overlay-occ  { top:12px; left:12px; }
+.map-overlay-tips { top:12px; right:12px; }
+.map-overlay.hidden { opacity:0; pointer-events:none; }
+.map-toggle-bar {
+  position:absolute; bottom:16px; left:50%; transform:translateX(-50%);
+  z-index:1001; display:flex; gap:8px;
+}
+.map-tog-btn {
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:20px; padding:6px 12px; font-size:11px; font-weight:600;
+  color:var(--text2); cursor:pointer; box-shadow:0 2px 8px var(--shadow);
+  transition:all .2s;
+}
+.map-tog-btn.active { background:var(--blue); color:#fff; border-color:transparent; }
+.map-occ-title { font-weight:700; color:var(--text); margin-bottom:6px; font-size:12px; }
+.map-occ-pct { font-size:22px; font-weight:800; line-height:1; }
+.map-occ-trend { font-size:10px; margin-top:4px; }
+.map-occ-bars { margin-top:10px; }
+.map-occ-bar-row { display:flex; align-items:center; gap:6px; margin-bottom:5px; }
+.map-occ-bar-label { font-size:10px; color:var(--text2); width:60px; truncate:ellipsis; overflow:hidden; white-space:nowrap; }
+.map-occ-bar-track { flex:1; height:6px; background:var(--border); border-radius:3px; overflow:hidden; }
+.map-occ-bar-fill { height:100%; border-radius:3px; transition:width .4s; }
+.map-occ-bar-val { font-size:10px; color:var(--text3); width:28px; text-align:right; }
+.map-tip-row { padding:7px 0; border-bottom:1px solid var(--border); }
+.map-tip-row:last-child { border-bottom:none; }
+.map-tip-name { font-size:11px; font-weight:600; color:var(--text); margin-bottom:3px; }
+.map-tip-meta { font-size:10px; color:var(--text2); display:flex; gap:6px; align-items:center; }
 .itin-note{font-size:11px;color:var(--text2);line-height:1.5;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);}
 /* --- ROTEIRO EM TEMPO REAL --- */
 .rt-gps-bar{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--surface2);border-radius:12px;margin-bottom:12px;font-size:12px;}
@@ -518,7 +669,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
             <button class="tab active" onclick="switchTab('resumo',this)">Resumo</button>
             <button class="tab" onclick="switchTab('atracoes',this)">Atracoes</button>
             <button class="tab" onclick="switchTab('shows',this)">Shows</button>
-            <button class="tab" id="tab-roteiro" onclick="switchTab('roteiro',this)" style="display:none">&#128205; Roteiro</button>
+            <button class="tab" id="tab-roteiro" onclick="switchTab('roteiro',this)" style="display:none">Roteiro</button>
+            <button class="tab" onclick="switchTab('mapa',this)">Mapa</button>
           </div>
         </div>
       </div>
@@ -553,10 +705,6 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
             <div id="itin-section" style="display:none">
               <div class="sec-label">&#128205; Roteiro sugerido agora</div>
               <div id="itin-content"></div>
-            </div>
-            <div id="ocupacao-section" style="display:none">
-              <div class="sec-label">&#128202; Ocupacao do parque</div>
-              <div id="ocupacao-content"></div>
             </div>
             <div class="ticker" id="park-ticker"></div>
           </div>
@@ -596,6 +744,11 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
           <div class="panel-inner">
             <div id="roteiro-content"></div>
           </div>
+        </div>
+
+        <!-- MAPA DE CALOR -->
+        <div class="tab-panel" id="panel-mapa">
+          <div id="park-map" style="width:100%;height:calc(100vh - 140px);"></div>
         </div>
 
       </div>
@@ -1195,8 +1348,10 @@ function goHome() {
 
 async function selectPark(apiId) {
   S.park=PARKS.find(function(p){ return p.apiId===apiId; });
-  S._firstLoadDone = false; // reseta para bloquear notificacoes na primeira carga do novo parque
+  S._firstLoadDone = false;
   S._prevStatus = null;
+  // Destroi mapa ao trocar de parque — será reiniciado ao entrar na aba
+  if(_map){ _map.remove(); _map=null; _areaLayers=[]; _userMarker=null; stopMapGPS(); }
   S.attSearch='';
   var inp=document.getElementById('att-search'); if(inp) inp.value='';
   var clr=document.getElementById('att-search-clear'); if(clr) clr.classList.remove('visible');
@@ -1330,6 +1485,8 @@ async function loadPark() {
     S.shows=ents.filter(function(e){ return e.entityType==='SHOW'&&e.showtimes&&e.showtimes.length>0; });
     checkAlerts(ents);
     renderHeader(); renderResumo(); renderAtt(); renderShows(); renderRoteiro();
+    // Atualiza heatmap se a aba mapa estiver ativa
+    if(_map) updateHeatMap();
     renderWeather();
     snapshotQueues();
     detectRainWindow();
@@ -1619,7 +1776,6 @@ function renderOcupacao() {
 
 /* --- RESUMO --- */
 function renderResumo() {
-  renderOcupacao();
   renderPFTracker();
   buildItinerary();
 }
@@ -1814,6 +1970,129 @@ function switchTab(name,btn) {
   if(btn) btn.classList.add('active');
   document.querySelectorAll('.tab-panel').forEach(function(p){ p.classList.remove('active'); });
   document.getElementById('panel-'+name).classList.add('active');
+  // Inicializa mapa ao entrar na aba — Leaflet precisa que o container esteja visivel
+  if(name === 'mapa') {
+    if(!_map) { initMap(); }
+    else { _map.invalidateSize(); updateHeatMap(); }
+  } else {
+    // Para GPS do mapa ao sair da aba para economizar bateria
+    if(name !== 'mapa') stopMapGPS();
+  }
+}
+
+/* --- MAPA DE CALOR --- */
+var _map = null;
+var _areaLayers = [];
+var _userMarker = null;
+var _mapGpsWatch = null;
+
+var MAP_CONFIG = {
+  '75ea578a-adc8-4116-a54d-dccb60765ef9': { center:[28.4199, -81.5808], zoom:17 },
+  '47f90d2c-e191-4239-a466-5892ef59a88b': { center:[28.3747, -81.5498], zoom:16 },
+  '288747d1-8b4f-4a64-867e-ea7c9b27bad8': { center:[28.3582, -81.5601], zoom:17 },
+};
+
+function initMap() {
+  if(!S.park) return;
+  var cfg = MAP_CONFIG[S.park.apiId];
+  if(!cfg) return;
+  if(_map) { _map.remove(); _map=null; _areaLayers=[]; _userMarker=null; }
+  _map = L.map('park-map', {zoomControl:true}).setView(cfg.center, cfg.zoom);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxZoom:19,
+  }).addTo(_map);
+  updateHeatMap();
+  startMapGPS();
+}
+
+function updateHeatMap() {
+  if(!_map || !S.att) return;
+  _areaLayers.forEach(function(l){ _map.removeLayer(l); });
+  _areaLayers = [];
+
+  var areaMap = {};
+  S.att.forEach(function(e) {
+    var sd = getStatic(e); if(!sd||!sd.lat) return;
+    if(e.status !== 'OPERATING') return;
+    var wait = e.queue&&e.queue.STANDBY&&e.queue.STANDBY.waitTime;
+    var area = sd.area || 'Outros';
+    if(!areaMap[area]) areaMap[area] = { lats:[], lngs:[], waits:[], names:[] };
+    areaMap[area].lats.push(sd.lat);
+    areaMap[area].lngs.push(sd.lng);
+    areaMap[area].waits.push(wait != null ? wait : 0);
+    areaMap[area].names.push({ name:e.name, wait:wait });
+  });
+
+  Object.keys(areaMap).forEach(function(area) {
+    var d = areaMap[area];
+    var lat = d.lats.reduce(function(a,b){return a+b;},0)/d.lats.length;
+    var lng = d.lngs.reduce(function(a,b){return a+b;},0)/d.lngs.length;
+    var validWaits = d.waits.filter(function(w){return w>0;});
+    var avgWait = validWaits.length ? Math.round(validWaits.reduce(function(a,b){return a+b;},0)/validWaits.length) : 0;
+
+    var color = avgWait===0?'#94a3b8':avgWait<=15?'#22c55e':avgWait<=30?'#84cc16':avgWait<=50?'#f59e0b':avgWait<=70?'#ef4444':'#7f1d1d';
+    var label = avgWait===0?'Sem fila':avgWait<=15?'Tranquilo':avgWait<=30?'Moderado':avgWait<=50?'Movimentado':avgWait<=70?'Cheio':'Muito cheio';
+
+    var attList = d.names
+      .sort(function(a,b){ return (a.wait||0)-(b.wait||0); })
+      .map(function(x){
+        var wLabel = x.wait!=null ? x.wait+' min' : 'sem fila';
+        var wColor = x.wait==null?'#94a3b8':x.wait<=15?'#22c55e':x.wait<=30?'#84cc16':x.wait<=50?'#f59e0b':'#ef4444';
+        return '<div style="display:flex;justify-content:space-between;gap:12px;padding:3px 0;border-bottom:1px solid #eee">'
+          +'<span style="font-size:11px">'+x.name+'</span>'
+          +'<span style="font-size:11px;font-weight:700;color:'+wColor+';white-space:nowrap">'+wLabel+'</span>'
+          +'</div>';
+      }).join('');
+
+    var popupHtml = '<div style="min-width:180px">'
+      +'<div style="font-weight:700;font-size:13px;margin-bottom:4px">'+area+'</div>'
+      +'<div style="font-size:11px;color:'+color+';font-weight:600;margin-bottom:8px">'+label+(avgWait>0?' · '+avgWait+' min média':'')+'</div>'
+      +attList+'</div>';
+
+    var circle = L.circle([lat, lng], {
+      radius: 180,
+      color: color,
+      fillColor: color,
+      fillOpacity: 0.35,
+      weight: 2,
+      opacity: 0.7,
+    }).bindPopup(popupHtml).addTo(_map);
+
+    var labelIcon = L.divIcon({
+      className: '',
+      html: '<div style="background:'+color+';color:#fff;border-radius:10px;padding:2px 7px;font-size:10px;font-weight:700;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.3);">'+label+'</div>',
+      iconAnchor: [40, 10],
+    });
+    var labelMarker = L.marker([lat, lng], { icon:labelIcon, interactive:false, zIndexOffset:500 }).addTo(_map);
+
+    _areaLayers.push(circle);
+    _areaLayers.push(labelMarker);
+  });
+}
+
+function startMapGPS() {
+  if(!navigator.geolocation) return;
+  if(_mapGpsWatch) navigator.geolocation.clearWatch(_mapGpsWatch);
+  _mapGpsWatch = navigator.geolocation.watchPosition(function(pos) {
+    var lat=pos.coords.latitude, lng=pos.coords.longitude;
+    if(_userMarker) {
+      _userMarker.setLatLng([lat,lng]);
+    } else {
+      var icon = L.divIcon({
+        className:'',
+        html:'<div style="width:16px;height:16px;background:#3b82f6;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 4px rgba(59,130,246,0.35);"></div>',
+        iconSize:[16,16], iconAnchor:[8,8],
+      });
+      _userMarker = L.marker([lat,lng],{icon:icon,zIndexOffset:1000})
+        .bindPopup('Você está aqui').addTo(_map);
+    }
+  }, function(){}, {enableHighAccuracy:true, maximumAge:5000, timeout:10000});
+}
+
+function stopMapGPS() {
+  if(_mapGpsWatch){ navigator.geolocation.clearWatch(_mapGpsWatch); _mapGpsWatch=null; }
+  if(_userMarker&&_map){ _map.removeLayer(_userMarker); _userMarker=null; }
 }
 
 /* --- MODAL --- */
