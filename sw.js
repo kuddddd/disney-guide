@@ -15,8 +15,6 @@ self.addEventListener('activate', function(e) {
 function showNotif(title, body, tag) {
   return self.registration.showNotification(title || 'WDW Guide', {
     body:     body || '',
-    icon:     '/disney-guide/icon-192.png',
-    badge:    '/disney-guide/icon-192.png',
     tag:      tag  || 'wdw-alert',
     renotify: true,
     vibrate:  [200, 100, 200],
