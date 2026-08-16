@@ -639,6 +639,7 @@ var S = {
   sort:'asc', showSort:'asc',
   visited:new Set(), alerts:[],
   _prevStatus: null, // cache de status das atracoes para detectar mudancas entre ciclos
+  _firstLoadDone: false, // bloqueia notificacoes automaticas na primeira carga do parque
   theme:'dark',
   timers:{refresh:null,cd:null,closing:null},
   modalEnt:null,
@@ -912,11 +913,19 @@ function checkStatusChangeNotifs(ents) {
 
 function checkAlerts(ents) {
   if(!S.park) return;
+  // Clima dispara sempre — é contexto imediato independente de ciclo anterior
+  checkWeatherNotifs();
+  // Na primeira execucao por parque apenas popula o cache de status — sem notificacoes de fila ou status
+  if(!S._firstLoadDone) {
+    S._prevStatus = {};
+    ents.forEach(function(e) { if(e.entityType === 'ATTRACTION') S._prevStatus[e.id] = e.status; });
+    S._firstLoadDone = true;
+    return;
+  }
   checkQueueNotifs(ents);
   checkShowNotifs();
-  checkWeatherNotifs();
   checkStatusChangeNotifs(ents);
-  // Salva status atual para comparar no proximo ciclo
+  // Atualiza cache de status para o proximo ciclo
   S._prevStatus = {};
   ents.forEach(function(e) { if(e.entityType === 'ATTRACTION') S._prevStatus[e.id] = e.status; });
 }
@@ -1186,6 +1195,8 @@ function goHome() {
 
 async function selectPark(apiId) {
   S.park=PARKS.find(function(p){ return p.apiId===apiId; });
+  S._firstLoadDone = false; // reseta para bloquear notificacoes na primeira carga do novo parque
+  S._prevStatus = null;
   S.attSearch='';
   var inp=document.getElementById('att-search'); if(inp) inp.value='';
   var clr=document.getElementById('att-search-clear'); if(clr) clr.classList.remove('visible');
