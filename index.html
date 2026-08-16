@@ -638,6 +638,7 @@ var S = {
   park:null, live:[], att:[], shows:[],
   sort:'asc', showSort:'asc',
   visited:new Set(), alerts:[],
+  _prevStatus: null, // cache de status das atracoes para detectar mudancas entre ciclos
   theme:'dark',
   timers:{refresh:null,cd:null,closing:null},
   modalEnt:null,
@@ -892,11 +893,32 @@ function checkWeatherNotifs() {
   });
 }
 
+// 4. Mudança de status — avisa quando atrações abrem ou fecham
+function checkStatusChangeNotifs(ents) {
+  if(!S.park || !S._prevStatus) return;
+  ents.forEach(function(e) {
+    if(e.entityType !== 'ATTRACTION') return;
+    var sd = getStatic(e); if(!sd) return;
+    var prev = S._prevStatus[e.id];
+    var curr = e.status; // 'OPERATING', 'CLOSED', 'REFURBISHMENT', 'DOWN'
+    if(!prev || prev === curr) return;
+    if(curr === 'OPERATING' && (prev === 'CLOSED' || prev === 'DOWN')) {
+      autoNotify('✅ Abriu!', e.name + ' está operando agora' + (e.queue&&e.queue.STANDBY&&e.queue.STANDBY.waitTime!=null ? ' — ' + e.queue.STANDBY.waitTime + ' min de fila' : '') + '.', 'status-open-' + e.id);
+    } else if((curr === 'CLOSED' || curr === 'DOWN') && prev === 'OPERATING') {
+      autoNotify('🚫 Fechou', e.name + ' ' + (curr === 'DOWN' ? 'parou por manutenção temporária.' : 'encerrou as operações.'), 'status-close-' + e.id);
+    }
+  });
+}
+
 function checkAlerts(ents) {
   if(!S.park) return;
   checkQueueNotifs(ents);
   checkShowNotifs();
   checkWeatherNotifs();
+  checkStatusChangeNotifs(ents);
+  // Salva status atual para comparar no proximo ciclo
+  S._prevStatus = {};
+  ents.forEach(function(e) { if(e.entityType === 'ATTRACTION') S._prevStatus[e.id] = e.status; });
 }
 
 /* --- API --- */
