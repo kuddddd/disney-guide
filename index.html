@@ -820,20 +820,83 @@ function notify(title, body, tag) {
     try { new Notification(title, { body:body, icon:'/icon-192.png', tag:tag||'wdw-alert' }); } catch(e){}
   }
 }
-function checkAlerts(ents) {
-  if(!S.alerts.length||!S.park) return;
-  var now=Date.now();
-  S.alerts.forEach(function(al){
-    if(al.parkId!==S.park.apiId) return;
-    var e=ents.find(function(x){ return x.id===al.entityId; }); if(!e) return;
-    if(al.type==='queue'){
-      var w=e.queue&&e.queue.STANDBY&&e.queue.STANDBY.waitTime;
-      if(w!=null&&w<=al.threshold&&(!al.lastFired||(now-al.lastFired)>600000)){
-        al.lastFired=now; saveA();
-        toast('\u26A1 '+e.name+': fila em '+w+' min!');
-      }
+/* --- NOTIFICAÇÕES AUTOMÁTICAS ---
+   Sem configuração manual — dispara automaticamente a cada refresh (5 min)
+   para filas, shows próximos, chuva e temperatura extrema.
+   Cada gatilho tem cooldown próprio para não repetir no mesmo ciclo.
+*/
+var _notifCooldowns = {};
+var NOTIF_COOLDOWN  = 10 * 60 * 1000; // 10 min entre notificações do mesmo tipo
+
+function canNotify(tag) {
+  var last = _notifCooldowns[tag] || 0;
+  return (Date.now() - last) > NOTIF_COOLDOWN;
+}
+function markNotified(tag) { _notifCooldowns[tag] = Date.now(); }
+
+function autoNotify(title, body, tag) {
+  if(!canNotify(tag)) return;
+  markNotified(tag);
+  notify(title, body, tag);
+}
+
+// 1. Filas — avisa quando atração popular cai abaixo de 20 min
+function checkQueueNotifs(ents) {
+  if(!S.park) return;
+  ents.forEach(function(e) {
+    var w = e.queue && e.queue.STANDBY && e.queue.STANDBY.waitTime;
+    if(w == null || w > 20 || w === 0) return;
+    var sd = getStatic(e); if(!sd || !sd.lat) return; // so atracoes mapeadas
+    var tag = 'queue-' + e.id;
+    autoNotify('\u26A1 Fila baixa!', e.name + ': apenas ' + w + ' min de espera', tag);
+  });
+}
+
+// 2. Shows — avisa 15 min antes de qualquer show ou parade
+function checkShowNotifs() {
+  if(!S.shows || !S.shows.length) return;
+  S.shows.forEach(function(e) {
+    var times = (e.showtimes || []).slice().sort(function(a,b){ return new Date(a.startTime)-new Date(b.startTime); });
+    times.forEach(function(st) {
+      var mins = minsTo(st.startTime);
+      if(mins == null || mins < 0 || mins > 20) return;
+      var tag = 'show-' + e.id + '-' + st.startTime;
+      autoNotify('\uD83C\uDFA0 Show em breve!', e.name + ' come\u00e7a em ' + mins + ' min \u2014 v\u00e1 se posicionar!', tag);
+    });
+  });
+}
+
+// 3. Clima — avisa sobre chuva iminente e temperatura extrema
+function checkWeatherNotifs() {
+  if(!S.weather || !S.weather.hourly) return;
+  var nowH = new Date().getHours();
+  var times = S.weather.hourly.time || [];
+  var precip = S.weather.hourly.precipitation_probability || [];
+  var thunder = S.weather.hourly.thunderstorm_probability || [];
+  var apparent = S.weather.hourly.apparent_temperature || [];
+  times.forEach(function(t, i) {
+    var hh = new Date(t).getHours();
+    if(hh < nowH || hh > nowH + 2) return;
+    var label = hh + 'h';
+    var rain  = precip[i]   || 0;
+    var storm = thunder[i]  || 0;
+    var temp  = apparent[i] || 0;
+    if(storm >= 50) {
+      autoNotify('\u26C8\uFE0F Tempestade!', 'Alta chance de raios \u00e0s ' + label + '. Atra\u00e7\u00f5es ao ar livre podem fechar.', 'weather-storm-'+hh);
+    } else if(rain >= 70) {
+      autoNotify('\uD83C\uDF27\uFE0F Chuva se aproximando', 'Chuva forte prevista \u00e0s ' + label + '. Bom momento para atra\u00e7\u00f5es cobertas.', 'weather-rain-'+hh);
+    }
+    if(temp >= 40) {
+      autoNotify('\uD83C\uDF21\uFE0F Calor extremo', 'Sensa\u00e7\u00e3o de ' + Math.round(temp) + '\u00b0C \u00e0s ' + label + '. Hidrate-se!', 'weather-heat-'+hh);
     }
   });
+}
+
+function checkAlerts(ents) {
+  if(!S.park) return;
+  checkQueueNotifs(ents);
+  checkShowNotifs();
+  checkWeatherNotifs();
 }
 
 /* --- API --- */
@@ -3099,6 +3162,12 @@ function toggleGPS() {
 /* --- INIT --- */
 async function init() {
   load();
+
+  // Solicita permissao de notificacao logo no inicio — necessario para o SW exibir notifs
+  // Faz isso silenciosamente: nao interrompe o fluxo se negado
+  if('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
 
   // Atualiza texto e barra de progresso durante o carregamento
   var ldText = document.getElementById('ld-text') || document.querySelector('.ld-text');
