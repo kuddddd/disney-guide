@@ -43,6 +43,34 @@ Desenvolvido para uso durante as férias em Orlando. Roda como arquivos estátic
 - Eventos-âncora (parades e fogos) inseridos automaticamente no roteiro com dica de posicionamento contextual por parque
 - Botão 📍 em cada card para abrir rota de caminhada no Google Maps
 
+**Mapa 🗺️**
+- Mapa interativo do parque via OpenStreetMap/Leaflet, centralizado nas coordenadas reais de cada parque
+- Heatmap por área: atrações abertas são agrupadas por área geográfica, com centroide calculado e círculo colorido proporcional à fila média
+- Escala de cores dos círculos por tempo médio de espera:
+
+  | Cor | Fila média | Rótulo |
+  |---|---|---|
+  | 🔵 Cinza | Sem fila registrada | Sem fila |
+  | 🟢 Verde | ≤ 15 min | Tranquilo |
+  | 🟡 Verde-lima | ≤ 30 min | Moderado |
+  | 🟠 Âmbar | ≤ 50 min | Movimentado |
+  | 🔴 Vermelho | ≤ 70 min | Cheio |
+  | ⬛ Vinho | > 70 min | Muito cheio |
+
+- Rótulo flutuante sobre cada círculo com o status da área (ex: "Tranquilo", "Cheio")
+- Popup por área ao tocar no círculo: lista todas as atrações abertas da área com fila individual, ordenadas da menor para a maior espera
+- Marcador azul pulsante de localização do visitante via GPS em tempo real (watchPosition com alta precisão)
+- GPS do mapa é independente do GPS do Roteiro — ativado automaticamente ao abrir a aba e desativado ao sair
+- Mapa se reinicializa ao trocar de parque, ajustando zoom e centro automaticamente
+
+### Configuração do mapa por parque
+
+| Parque | Centro | Zoom |
+|---|---|---|
+| 🏰 Magic Kingdom | 28.4199, -81.5808 | 17 |
+| 🌍 EPCOT | 28.3747, -81.5498 | 16 |
+| 🎬 Hollywood Studios | 28.3582, -81.5601 | 17 |
+
 ### Notificações automáticas
 Sem configuração manual — o app pede permissão uma vez e passa a notificar automaticamente a cada 5 minutos via Service Worker, mesmo com o browser minimizado.
 
@@ -68,7 +96,7 @@ Cada tipo de notificação tem cooldown de 10 minutos para evitar repetição ex
 | 🌍 EPCOT | 33 |
 | 🎬 Hollywood Studios | 13 |
 
-Todas as atrações têm coordenadas `lat`/`lng` reais para cálculo de distância no roteiro. Galerias e espaços sem fila aparecem na aba Atrações mas ficam fora do algoritmo de roteiro.
+Todas as atrações têm coordenadas `lat`/`lng` reais para cálculo de distância no roteiro e posicionamento no heatmap. Galerias e espaços sem fila aparecem na aba Atrações mas ficam fora do algoritmo de roteiro e do heatmap.
 
 ---
 
@@ -78,8 +106,9 @@ Todas as atrações têm coordenadas `lat`/`lng` reais para cálculo de distânc
 |---|---|---|
 | [themeparks.wiki](https://api.themeparks.wiki) | Filas ao vivo, shows, schedule e coordenadas | Pública, sem autenticação |
 | [Open-Meteo](https://open-meteo.com) | Clima atual e forecast horário em Orlando | Pública, sem autenticação |
+| [OpenStreetMap](https://www.openstreetmap.org) | Tiles base do mapa interativo (via Leaflet) | Pública, sem autenticação |
 
-Ambas as APIs são gratuitas e não requerem chave de acesso.
+Todas as APIs são gratuitas e não requerem chave de acesso.
 
 ---
 
@@ -92,6 +121,12 @@ README.md
 ```
 
 Sem dependências externas, sem build, sem servidor. ES5 vanilla para máxima compatibilidade mobile.
+
+**Dependências externas (CDN)**
+
+| Biblioteca | Versão | Uso |
+|---|---|---|
+| Leaflet | 1.9.4 | Mapa interativo e heatmap por área |
 
 **Cache e persistência (localStorage)**
 
@@ -140,6 +175,9 @@ JavaScript vanilla elimina qualquer fricção de build e mantém o projeto sem d
 
 **Por que o roteiro usa score greedy e não otimização global?**
 O problema do Caixeiro Viajante com N atrações e restrições de tempo de fila dinâmico é NP-difícil. O greedy com score ponderado é O(N²) e produz resultados práticos e recalculáveis em tempo real conforme as filas mudam a cada 5 minutos.
+
+**Por que o heatmap agrupa por área e não por atração individual?**
+Um marcador por atração poluiria o mapa com 40+ pins sobrepostos. Agrupando por área geográfica, o círculo comunica o estado macro da região com um olhar — útil para decidir para onde ir a seguir sem precisar ler uma lista.
 
 **Timezone**
 Toda comparação de horários usa `Date.now()` vs `Date.parse(isoWithOffset)` — ambos em UTC — o que garante comportamento correto independente do timezone do browser (testado com device em São Paulo acessando dados de Orlando em Eastern Time).
