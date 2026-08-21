@@ -68,8 +68,9 @@ function updateHeatMap() {
       +'<div style="font-size:11px;color:'+color+';font-weight:600;margin-bottom:8px">'+label+(avgWait>0?' &middot; '+avgWait+' min m\u00e9dia':'')+'</div>'
       +attList+'</div>';
 
+    var radius = Math.min(280, Math.max(120, 100 + d.names.length * 20));
     var circle = L.circle([lat, lng], {
-      radius: 180,
+      radius: radius,
       color: color,
       fillColor: color,
       fillOpacity: 0.35,
@@ -80,7 +81,7 @@ function updateHeatMap() {
     var labelIcon = L.divIcon({
       className: '',
       html: '<div style="background:'+color+';color:#fff;border-radius:10px;padding:2px 7px;font-size:10px;font-weight:700;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.3);">'+label+'</div>',
-      iconAnchor: [40, 10],
+      iconAnchor: [Math.round(label.length * 3.5), 10],
     });
     var labelMarker = L.marker([lat, lng], { icon:labelIcon, interactive:false, zIndexOffset:500 }).addTo(_map);
 
@@ -522,6 +523,15 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
 .itin-step-pct{font-size:11px;margin-top:2px;}
 /* --- MAPA DE CALOR --- */
 #panel-mapa { position:relative; padding:0 !important; }
+.map-layer-btn {
+  position:absolute; bottom:16px; right:12px; z-index:1000;
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:20px; padding:7px 14px; font-size:12px; font-weight:600;
+  color:var(--text2); cursor:pointer; box-shadow:0 2px 10px var(--shadow);
+  font-family:'Inter',sans-serif; transition:background .15s, color .15s;
+  white-space:nowrap;
+}
+.map-layer-btn:active { background:var(--surface2); }
 .map-overlay {
   position:absolute; z-index:1000; background:var(--surface);
   border-radius:14px; padding:12px 14px; box-shadow:0 4px 20px var(--shadow);
@@ -749,6 +759,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);font-
         <!-- MAPA DE CALOR -->
         <div class="tab-panel" id="panel-mapa">
           <div id="park-map" style="width:100%;height:calc(100vh - 140px);"></div>
+          <button id="btn-map-layer" class="map-layer-btn" onclick="toggleMapLayer()">🛰️ Satélite</button>
         </div>
 
       </div>
@@ -1142,13 +1153,13 @@ var STATIC = {
   'royal-friendship-faire': {area:'Main Street U.S.A.', covered:false,duration:15, lat:28.41999, lng:-81.58064, desc:'Assista ao Mickey e seus Amigos subirem ao palco em frente ao Cinderella Castle nesta magica celebracao.'},
   'disney-starlight':       {area:'Main Street U.S.A.', covered:false,duration:20, lat:28.41790, lng:-81.58064, desc:'Deslumbrante desfile noturno que atravessa o Magic Kingdom celebrando momentos magicos das estorias Disney com o realce da luz das estrelas.'},
   /* ---- HOLLYWOOD STUDIOS ---- */
-  'mickey-runaway':         {area:'Hollywood Boulevard', covered:true, duration:5,  lat:28.35802, lng:-81.56019, desc:'Passeio em tela envolvente pelos filmes de Mickey com efeitos fisicos.'},
-  'slinky-dog':             {area:'Toy Story Land',    covered:false, duration:2,  lat:28.35639, lng:-81.56097, desc:'Montanha-russa familiar pelos campos de Toy Story Land.'},
+  'mickey-runaway':         {area:'Hollywood Boulevard', covered:true, duration:5,  lat:28.35623, lng:-81.56048, desc:'Passeio em tela envolvente pelos filmes de Mickey com efeitos fisicos.'},
+  'slinky-dog':             {area:'Toy Story Land',    covered:false, duration:2,  lat:28.35942, lng:-81.56069, desc:'Montanha-russa familiar pelos campos de Toy Story Land.'},
   'toy-story-mania':        {area:'Toy Story Land',    covered:true,  duration:7,  lat:28.35580, lng:-81.56049, desc:'Atire em alvos e acumule pontos neste passeio interativo.'},
-  'tower-of-terror':        {area:'Sunset Boulevard',  covered:true,  duration:12, lat:28.35537, lng:-81.56255, desc:'Suba ao Hotel Hollywood Tower e experimente quedas de elevador.'},
-  'rock-n-roller':          {area:'Sunset Boulevard',  covered:true,  duration:2,  lat:28.35646, lng:-81.56289, desc:'Montanha-russa no escuro com os Muppets a 97km/h em 2 segundos, com musica e efeitos especiais.'},
-  'rise-resistance':        {area:"Star Wars: Galaxy's Edge", covered:true, duration:18, lat:28.35319, lng:-81.56358, desc:'Escape da Primeira Ordem nesta epica atracao imersiva de Star Wars.'},
-  'millennium-falcon':      {area:"Star Wars: Galaxy's Edge", covered:true, duration:5,  lat:28.35259, lng:-81.56283, desc:'Pilote o Millennium Falcon em missao de contrabando.'},
+  'tower-of-terror':        {area:'Sunset Boulevard',  covered:true,  duration:12, lat:28.36006, lng:-81.55983, desc:'Suba ao Hotel Hollywood Tower e experimente quedas de elevador.'},
+  'rock-n-roller':          {area:'Sunset Boulevard',  covered:true,  duration:2,  lat:28.35695, lng:-81.56295, desc:'Montanha-russa no escuro com os Muppets a 97km/h em 2 segundos, com musica e efeitos especiais.'},
+  'rise-resistance':        {area:"Star Wars: Galaxy's Edge", covered:true, duration:18, lat:28.35380, lng:-81.56340, desc:'Escape da Primeira Ordem nesta epica atracao imersiva de Star Wars.'},
+  'millennium-falcon':      {area:"Star Wars: Galaxy's Edge", covered:true, duration:5,  lat:28.35320, lng:-81.56260, desc:'Pilote o Millennium Falcon em missao de contrabando.'},
   'star-tours':             {area:'Echo Lake',         covered:true,  duration:5,  lat:28.35821, lng:-81.56099, desc:'Simulador de viagem estelar pelo universo Star Wars.'},
   'alien-swirling':         {area:'Toy Story Land',    covered:false, duration:2,  lat:28.35610, lng:-81.56120, desc:'Passeio giratório com os aliens de Toy Story.'},
   'indiana-jones':          {area:'Echo Lake',         covered:false, duration:30, lat:28.35770, lng:-81.56058, desc:'Show ao vivo com dublas, explosoes e cenas de acao de Indiana Jones.'},
@@ -1164,7 +1175,7 @@ var STATIC = {
   'wonderful-animation':    {area:'Hollywood Boulevard', covered:true, duration:40, lat:28.35930, lng:-81.56040, desc:'Faca parte da aventura entrando em uma colecao de filmes de animacao novos, classicos e raramente vistos em projecoes cinematograficas.'},
   'movie-magic':            {area:'Hollywood Boulevard', covered:false,duration:12, lat:28.35930, lng:-81.56040, desc:'Show de projecoes noturno de 10 a 12 minutos destacando Indiana Jones e os Piratas do Caribe na fachada do Teatro Chines.'},
   /* ---- EPCOT ---- */
-  'guardians':              {area:'World Discovery',         covered:true,  duration:5,  lat:28.37488, lng:-81.54975, desc:'Montanha-russa dos Guardioes da Galaxia com musica e queda livre.'},
+  'guardians':              {area:'World Discovery',         covered:true,  duration:5,  lat:28.37460, lng:-81.54788, desc:'Montanha-russa dos Guardioes da Galaxia com musica e queda livre.'},
   'test-track':             {area:'World Discovery',         covered:true,  duration:5,  lat:28.37390, lng:-81.54887, desc:'Projete e teste um carro virtual em condicoes extremas.'},
   'soarin':                 {area:'World Nature',            covered:true,  duration:5,  lat:28.37247, lng:-81.54948, desc:'Voe pela Terra em passeio cinematografico com paisagens deslumbrantes.'},
   'remy':                   {area:'World Showcase - Franca', covered:true,  duration:5,  lat:28.36801, lng:-81.54987, desc:'Passeio pelo mundo da culinaria francesa aos olhos do Remy.'},
@@ -1178,12 +1189,12 @@ var STATIC = {
   'short-film':             {area:'World Celebration',       covered:true,  duration:15, lat:28.37310, lng:-81.55095, desc:'Assista a curtas-metragens famosos da Disney e Pixar em 4D.'},
   'spaceship-earth':        {area:'World Celebration',       covered:true,  duration:16, lat:28.37476, lng:-81.54978, desc:'Viaje no tempo pela historia das comunicacoes humanas.'},
   'mission-space':          {area:'World Discovery',         covered:true,  duration:5,  lat:28.37354, lng:-81.54803, desc:'Simulacao de missao para Marte ou passeio orbital pela Terra.'},
-  'gran-fiesta':            {area:'World Showcase - Mexico', covered:true,  duration:8,  lat:28.36862, lng:-81.55402, desc:'Passeio de barco pelo Pavilhao do Mexico com os 3 Amigos.'},
-  'china-film':             {area:'World Showcase - China',  covered:true,  duration:12, lat:28.36980, lng:-81.55330, desc:'Jornada pela China em filme Circle-Vision 360.'},
-  'canada-film':            {area:'World Showcase - Canada', covered:true,  duration:14, lat:28.37128, lng:-81.55524, desc:'Visao panoramica do grande norte branco em Circle-Vision 360.'},
+  'gran-fiesta':            {area:'World Showcase - Mexico', covered:true,  duration:8,  lat:28.37194, lng:-81.54667, desc:'Passeio de barco pelo Pavilhao do Mexico com os 3 Amigos.'},
+  'china-film':             {area:'World Showcase - China',  covered:true,  duration:12, lat:28.37000, lng:-81.54611, desc:'Jornada pela China em filme Circle-Vision 360.'},
+  'canada-film':            {area:'World Showcase - Canada', covered:true,  duration:14, lat:28.37028, lng:-81.55194, desc:'Visao panoramica do grande norte branco em Circle-Vision 360.'},
   'impressions-france':     {area:'World Showcase - Franca', covered:true,  duration:18, lat:28.36820, lng:-81.55033, desc:'Filme de 18 minutos sobre a grandiosidade e o romantismo da Franca.'},
-  'voices-liberty':         {area:'World Showcase - EUA',    covered:true,  duration:30, lat:28.36996, lng:-81.55155, desc:'Harmonias cristalinas a cappella celebrando a experiencia americana.'},
-  'american-adventure':     {area:'World Showcase - EUA',    covered:true,  duration:30, lat:28.36970, lng:-81.55150, desc:'Narrativa inspiradora da historia dos Estados Unidos.'},
+  'voices-liberty':         {area:'World Showcase - EUA',    covered:true,  duration:30, lat:28.36746, lng:-81.54945, desc:'Harmonias cristalinas a cappella celebrando a experiencia americana.'},
+  'american-adventure':     {area:'World Showcase - EUA',    covered:true,  duration:30, lat:28.36746, lng:-81.54945, desc:'Narrativa inspiradora da historia dos Estados Unidos.'},
   'luminous-symphony':      {area:'World Showcase - Lago',   covered:false, duration:20, lat:28.37025, lng:-81.55155, desc:'Espetaculo noturno que ilumina o ceu sobre a World Showcase Lagoon.'},
   /* Atracoes com roteiro (lat/duration) */
   'imageworks':             {area:'World Celebration',       covered:true,  duration:15, lat:28.37284, lng:-81.55120, desc:'Espaco interativo de experiencias digitais e criativas ao lado do Journey Into Imagination.'},
@@ -1985,6 +1996,22 @@ var _map = null;
 var _areaLayers = [];
 var _userMarker = null;
 var _mapGpsWatch = null;
+var _tileLayer = null;
+var _mapSatellite = false;
+
+var TILE_OSM = { url:'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', attribution:'\u00a9 <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>', maxZoom:19 };
+var TILE_SAT = { url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attribution:'\u00a9 <a href="https://www.esri.com">Esri</a> &mdash; Esri, DigitalGlobe, GeoEye, i-cubed, USDA FSA, USGS, AEX, Getmapping, Aerogrid, IGN, IGP, swisstopo, and the GIS User Community', maxZoom:19 };
+
+function toggleMapLayer() {
+  if(!_map) return;
+  _mapSatellite = !_mapSatellite;
+  var cfg = _mapSatellite ? TILE_SAT : TILE_OSM;
+  if(_tileLayer) { _map.removeLayer(_tileLayer); }
+  _tileLayer = L.tileLayer(cfg.url, { attribution: cfg.attribution, maxZoom: cfg.maxZoom }).addTo(_map);
+  _tileLayer.bringToBack();
+  var btn = document.getElementById('btn-map-layer');
+  if(btn) btn.textContent = _mapSatellite ? '\uD83D\uDDFA\uFE0F Mapa' : '\uD83D\uDEF0\uFE0F Sat\u00e9lite';
+}
 
 var MAP_CONFIG = {
   '75ea578a-adc8-4116-a54d-dccb60765ef9': { center:[28.4199, -81.5808], zoom:17 },
@@ -1996,12 +2023,12 @@ function initMap() {
   if(!S.park) return;
   var cfg = MAP_CONFIG[S.park.apiId];
   if(!cfg) return;
-  if(_map) { _map.remove(); _map=null; _areaLayers=[]; _userMarker=null; }
+  if(_map) { _map.remove(); _map=null; _areaLayers=[]; _userMarker=null; _tileLayer=null; }
+  _mapSatellite = false;
+  var btn = document.getElementById('btn-map-layer');
+  if(btn) btn.textContent = '\uD83D\uDEF0\uFE0F Sat\u00e9lite';
   _map = L.map('park-map', {zoomControl:true}).setView(cfg.center, cfg.zoom);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    maxZoom:19,
-  }).addTo(_map);
+  _tileLayer = L.tileLayer(TILE_OSM.url, { attribution: TILE_OSM.attribution, maxZoom: TILE_OSM.maxZoom }).addTo(_map);
   updateHeatMap();
   startMapGPS();
 }
@@ -2050,8 +2077,9 @@ function updateHeatMap() {
       +'<div style="font-size:11px;color:'+color+';font-weight:600;margin-bottom:8px">'+label+(avgWait>0?' · '+avgWait+' min média':'')+'</div>'
       +attList+'</div>';
 
+    var radius = Math.min(280, Math.max(120, 100 + d.names.length * 20));
     var circle = L.circle([lat, lng], {
-      radius: 180,
+      radius: radius,
       color: color,
       fillColor: color,
       fillOpacity: 0.35,
@@ -2062,7 +2090,7 @@ function updateHeatMap() {
     var labelIcon = L.divIcon({
       className: '',
       html: '<div style="background:'+color+';color:#fff;border-radius:10px;padding:2px 7px;font-size:10px;font-weight:700;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.3);">'+label+'</div>',
-      iconAnchor: [40, 10],
+      iconAnchor: [Math.round(label.length * 3.5), 10],
     });
     var labelMarker = L.marker([lat, lng], { icon:labelIcon, interactive:false, zIndexOffset:500 }).addTo(_map);
 
