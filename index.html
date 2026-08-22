@@ -809,6 +809,7 @@ var S = {
   modalEnt:null,
   coordCache:{},
   scheduleCache:{}, // parkApiId_yyyy_mm -> {fetchedAt, data[]}
+  _morningBriefTimeout: null,
   todaySchedule:null, // entrada do dia atual {openingTime,closingTime,special[]}
   weather:null,        // dados Open-Meteo cacheados
   weatherFetchedAt:0,
@@ -967,6 +968,51 @@ if('serviceWorker' in navigator) {
   }).catch(function(){});
 }
 
+// Agenda o resumo matinal se a permissao ja foi concedida em sessao anterior
+if('Notification' in window && Notification.permission === 'granted') {
+  scheduleMorningBrief();
+}
+
+// Resumo matinal — agenda notificação para 7h30 com clima + shows do dia
+function scheduleMorningBrief() {
+  if(!('Notification' in window) || Notification.permission !== 'granted') return;
+  var _now = new Date();
+  var _target = new Date(_now);
+  _target.setHours(7, 30, 0, 0);
+  if(_now >= _target) _target.setDate(_target.getDate() + 1);
+  var _msUntil = _target - _now;
+  if(S._morningBriefTimeout) clearTimeout(S._morningBriefTimeout);
+  S._morningBriefTimeout = setTimeout(function() {
+    fireMorningBrief();
+    S._morningBriefTimeout = setInterval(fireMorningBrief, 24 * 60 * 60 * 1000);
+  }, _msUntil);
+}
+
+async function fireMorningBrief() {
+  var _d = await fetchWeather();
+  if(!_d) return;
+  var _allH = (_d.hourly.time||[]).map(function(t,i){
+    return {
+      h:     new Date(t).getHours(),
+      rain:  _d.hourly.precipitation_probability[i]||0,
+      storm: _d.hourly.thunderstorm_probability ? (_d.hourly.thunderstorm_probability[i]||0) : 0,
+      temp:  Math.round(_d.hourly.apparent_temperature[i]||0)
+    };
+  });
+  var _maxStorm = Math.max.apply(null, _allH.map(function(x){ return x.storm; }));
+  var _maxRain  = Math.max.apply(null, _allH.filter(function(x){ return x.h>=12&&x.h<=20; }).map(function(x){ return x.rain; }));
+  var _maxFeels = Math.max.apply(null, _allH.map(function(x){ return x.temp; }));
+  var _parts = [];
+  if(_maxStorm >= 50)     _parts.push('tempestade prov\u00e1vel \u26C8\uFE0F');
+  else if(_maxRain >= 60) _parts.push('chuva \u00e0 tarde \uD83C\uDF27\uFE0F');
+  else                    _parts.push('sem chuva significativa \u2600\uFE0F');
+  if(_maxFeels >= 35)     _parts.push('calor extremo ' + _maxFeels + '\u00B0C \uD83D\uDD25');
+  var _showCount = S.shows ? S.shows.length : 0;
+  if(_showCount > 0)      _parts.push(_showCount + ' shows hoje \uD83C\uDFAD');
+  if(S._todayEarly)       _parts.push('Early Entry dispon\u00edvel \u2B50');
+  notify('\uD83C\uDFAF Bom dia, WDW!', _parts.join(' \u00b7 ') || 'Confira o clima e os shows de hoje.', 'morning-brief');
+}
+
 // Solicita permissão de notificação — chamado no primeiro alerta configurado
 function requestNotifPermission(cb) {
   if(!('Notification' in window)) return cb && cb(false);
@@ -1021,13 +1067,22 @@ function checkQueueNotifs(ents) {
 // 2. Shows — avisa 15 min antes de qualquer show ou parade
 function checkShowNotifs() {
   if(!S.shows || !S.shows.length) return;
+  // Shows-ancora (parades, fogos, Fantasmic): avisa 35 min antes para garantir posicao
+  var _anchorIds = new Set();
+  detectPFShows().forEach(function(pf) { _anchorIds.add(pf.id); });
   S.shows.forEach(function(e) {
+    var _isAnchor = _anchorIds.has(e.id);
+    var _window = _isAnchor ? 35 : 20;
     var times = (e.showtimes || []).slice().sort(function(a,b){ return new Date(a.startTime)-new Date(b.startTime); });
     times.forEach(function(st) {
       var mins = minsTo(st.startTime);
-      if(mins == null || mins < 0 || mins > 20) return;
+      if(mins == null || mins < 0 || mins > _window) return;
       var tag = 'show-' + e.id + '-' + st.startTime;
-      autoNotify('\uD83C\uDFA0 Show em breve!', e.name + ' come\u00e7a em ' + mins + ' min \u2014 v\u00e1 se posicionar!', tag);
+      var _icon = _isAnchor ? '\uD83C\uDF86' : '\uD83C\uDFA0';
+      var _body = _isAnchor
+        ? e.name + ' em ' + mins + ' min \u2014 posicione-se agora para um bom lugar!'
+        : e.name + ' come\u00e7a em ' + mins + ' min \u2014 v\u00e1 se posicionar!';
+      autoNotify(_icon + ' Show em breve!', _body, tag);
     });
   });
 }
@@ -1501,7 +1556,18 @@ async function loadPark() {
     renderWeather();
     snapshotQueues();
     detectRainWindow();
-    document.getElementById('park-ticker').textContent='Atualizado as '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})+' - proxima em 5 min';
+    var _openNow = (S.att||[]).filter(function(e){ return e.status==='OPERATING'; }).length;
+    var _openPrev = S._prevOpenCount != null ? S._prevOpenCount : _openNow;
+    S._prevOpenCount = _openNow;
+    var _delta = _openNow - _openPrev;
+    var _deltaStr = _delta > 0 ? ' \u25b2'+_delta+' abertas' : _delta < 0 ? ' \u25bc'+Math.abs(_delta)+' fecharam' : '';
+    var _fila = (S.att||[]).filter(function(e){ return e.status==='OPERATING'&&e.queue&&e.queue.STANDBY&&e.queue.STANDBY.waitTime!=null; });
+    var _avgFila = _fila.length ? Math.round(_fila.reduce(function(a,e){ return a+e.queue.STANDBY.waitTime; },0)/_fila.length) : null;
+    var _tickerParts = ['Atualizado \u00e0s '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})];
+    if(_avgFila!=null) _tickerParts.push(_openNow+' abertas \u00b7 fila m\u00e9dia '+_avgFila+' min');
+    if(_deltaStr) _tickerParts.push(_deltaStr);
+    _tickerParts.push('pr\u00f3xima em 5 min');
+    document.getElementById('park-ticker').textContent = _tickerParts.join(' \u00b7 ');
     prefetchCoords(S.att.concat(S.shows));
     // #2, #3, #1, #5, #7 — carrega schedule do dia
     loadTodaySchedule();
@@ -2143,6 +2209,7 @@ function saveAlert(){
   saveA(); closeModal(); renderAtt();
   // Pede permissao de notificacao na primeira vez que um alerta e configurado
   requestNotifPermission(function(granted) {
+    if(granted) scheduleMorningBrief();
     toast(granted
       ? '\u26A1 Alerta configurado! Voce sera notificado mesmo com o app em background.'
       : '\u26A1 Alerta configurado! Ative as notificacoes do browser para receber avisos em background.'
@@ -2378,7 +2445,7 @@ async function fetchWeather() {
       +          'weather_code,precipitation_probability,wind_gusts_10m,uv_index'
       + '&hourly=temperature_2m,apparent_temperature,relative_humidity_2m,'
       +         'precipitation_probability,thunderstorm_probability,'
-      +         'weather_code,wind_gusts_10m,uv_index,cloud_cover,visibility'
+      +         'weather_code,wind_gusts_10m,uv_index,cloud_cover,visibility,precipitation'
       + '&timezone=America%2FNew_York&forecast_days=1&temperature_unit=celsius'
       + '&wind_speed_unit=kmh';
     var r = await fetch(url);
@@ -2630,6 +2697,14 @@ async function renderHomeWeather() {
     + (gusts > 0 ? ' &middot; rajadas ' + gusts + ' km/h' : '')
     + '</div>'
     + (uvNow > 0 ? '<div style="font-size:11px;color:var(--text3);margin-top:1px;">UV ' + uvNow + ' &middot; ' + uvLabel + '</div>' : '')
+    + (function(){
+        var _precip = d.hourly.precipitation || [];
+        var _mm = _precip.reduce(function(a,b){ return a+(b||0); }, 0);
+        if(_mm < 0.1) return '';
+        var _mmStr = _mm >= 10 ? Math.round(_mm) : _mm.toFixed(1);
+        var _col = _mm >= 20 ? 'var(--red)' : _mm >= 5 ? 'var(--blue)' : 'var(--text3)';
+        return '<div style="font-size:11px;font-weight:600;color:'+_col+';margin-top:3px;">\uD83D\uDCA7 '+_mmStr+' mm previstos hoje</div>';
+      })()
     + '</div>'
     + periodsHtml
     + (alerts.length ? '<div class="weather-ctx-grid">' + alerts.join('') + '</div>' : '')
@@ -2885,9 +2960,16 @@ function buildItinerary() {
     else if(s.area.trend < -10)   tip = 'Tendencia de queda — fila vai diminuir nas proximas horas.';
     else if(s.area.pctFuture < s.area.pctNow - 5) tip = 'Ficara mais tranquilo em breve.';
     else                           tip = 'Movimento moderado e estavel.';
-    if(rainAlertH && s.area.name.toLowerCase().includes('galaxy') || 
-       (rainAlertH && s.area.pctNow <= 40)) {
-      tip += ' Aproveite antes da chuva prevista as ' + rainAlertH + 'h.';
+    if(rainAlertH) {
+      var _coveredCount = S.att.filter(function(e){
+        var _s = getStatic(e);
+        return _s && _s.area === s.area.name && _s.covered === true;
+      }).length;
+      if(_coveredCount > 0) {
+        tip += ' \uD83C\uDFDB\uFE0F \u00c1rea coberta \u2014 boa op\u00e7\u00e3o durante a chuva prevista \u00e0s ' + rainAlertH + 'h.';
+      } else if(s.area.pctNow <= 45) {
+        tip += ' \u26A1 Aproveite ao ar livre antes da chuva prevista \u00e0s ' + rainAlertH + 'h.';
+      }
     }
     steps.push({ area:s.area, tip:tip });
     used[s.area.name] = true;
@@ -3479,24 +3561,31 @@ function skipRoute(id) {
   renderRoteiro();
 }
 
+var _routeGpsWatch = null;
+
 function toggleGPS() {
   var rs = getRouteState();
   if(rs.gpsActive) {
     rs.gpsActive = false; rs.userLat = null; rs.userLng = null;
+    if(_routeGpsWatch != null) { navigator.geolocation.clearWatch(_routeGpsWatch); _routeGpsWatch = null; }
     renderRoteiro(); return;
   }
   if(!navigator.geolocation) { rs.gpsError = 'GPS nao disponivel neste dispositivo.'; renderRoteiro(); return; }
-  navigator.geolocation.getCurrentPosition(function(pos) {
-    rs.userLat = pos.coords.latitude;
-    rs.userLng = pos.coords.longitude;
-    rs.gpsActive = true; rs.gpsError = null;
+  // watchPosition: recalcula o roteiro a cada novo fix de GPS
+  _routeGpsWatch = navigator.geolocation.watchPosition(function(pos) {
+    var rs2 = getRouteState();
+    rs2.userLat = pos.coords.latitude;
+    rs2.userLng = pos.coords.longitude;
+    rs2.gpsActive = true; rs2.gpsError = null;
     saveRouteStates();
     renderRoteiro();
-  }, function(err) {
-    rs.gpsError = 'Permissao de localizacao negada.';
-    rs.gpsActive = false;
+  }, function() {
+    var rs2 = getRouteState();
+    rs2.gpsError = 'Permissao de localizacao negada.';
+    rs2.gpsActive = false;
+    if(_routeGpsWatch != null) { navigator.geolocation.clearWatch(_routeGpsWatch); _routeGpsWatch = null; }
     renderRoteiro();
-  }, { enableHighAccuracy: true, timeout: 8000 });
+  }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 });
 }
 
 /* --- INIT --- */
